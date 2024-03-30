@@ -23,6 +23,10 @@ class MapScreen extends StatefulWidget {
 }
 
 class _MapScreenState extends State<MapScreen> {
+  Set<Marker> combinedMarkers = {}; // เพิ่มตัวแปร combinedMarkers
+  Set<Marker> markers = {}; // เพิ่มตัวแปร markers
+  StreamSubscription<Position>? _positionStreamSubscription; // โค้ดใหม่
+
   static const LatLng _pGooglePlex = LatLng(13.2891, 100.9244);
 
   String mapTheme = '';
@@ -42,10 +46,6 @@ class _MapScreenState extends State<MapScreen> {
   late LatLng _userLocation;
 
   bool mapToggle = false;
-
-  List<Marker> markers = [];
-
-  Set<Marker> combinedMarkers = {};
 
 //MapStyle
   @override
@@ -81,7 +81,8 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   Future<void> loadMapTheme() async {
-    final String data = await DefaultAssetBundle.of(context).loadString('assets/map_theme/map_standard.json');
+    final String data = await DefaultAssetBundle.of(context)
+        .loadString('assets/map_theme/map_standard.json');
     setState(() {
       mapTheme = data;
     });
@@ -96,15 +97,18 @@ class _MapScreenState extends State<MapScreen> {
     });
   }
 
+//โค้ดใหม่
   Future<void> _getCurrentLocation() async {
     bool serviceEnabled;
     LocationPermission permission;
 
+    // ตรวจสอบว่าบริการตำแหน่งสามารถใช้งานได้หรือไม่
     serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
       return Future.error('Location services are disabled.');
     }
 
+    // ตรวจสอบสิทธิ์การเข้าถึงตำแหน่ง
     permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
@@ -113,6 +117,7 @@ class _MapScreenState extends State<MapScreen> {
       }
     }
 
+    // รับตำแหน่งปัจจุบัน
     Position res = await Geolocator.getCurrentPosition(
       desiredAccuracy: LocationAccuracy.high,
     );
@@ -120,6 +125,23 @@ class _MapScreenState extends State<MapScreen> {
       currentLocation = res;
       mapToggle = true;
     });
+
+    // อัปเดตตำแหน่งเครื่องหมายหรือดำเนินการอื่น ๆ
+    _mergeCurrentLocationWithMarkers();
+
+    // สมัครสมาชิกสำหรับอัปเดตตำแหน่ง
+    _positionStreamSubscription = Geolocator.getPositionStream().listen(
+      (Position position) {
+        setState(() {
+          currentLocation = position;
+        });
+        // อัปเดตตำแหน่งเครื่องหมายหรือดำเนินการอื่น ๆ
+        _mergeCurrentLocationWithMarkers();
+      },
+      onError: (error) {
+        print('เกิดข้อผิดพลาดในการรับอัปเดตตำแหน่ง: $error');
+      },
+    );
   }
 
   Future<void> _getUserLocation() async {
@@ -128,7 +150,8 @@ class _MapScreenState extends State<MapScreen> {
         desiredAccuracy: LocationAccuracy.high,
       );
       LatLng userLocation = LatLng(position.latitude, position.longitude);
-      String? placeName = await getPlaceName(position.latitude, position.longitude);
+      String? placeName =
+          await getPlaceName(position.latitude, position.longitude);
       setState(() {
         _userLocation = userLocation;
       });
@@ -162,7 +185,8 @@ class _MapScreenState extends State<MapScreen> {
 
   Future<String?> getPlaceName(double latitude, double longitude) async {
     final apiKey = dotenv.env['GOOGLE_API_KEY'] ?? 'YOUR_FALLBACK_API_KEY';
-    final url = 'https://maps.googleapis.com/maps/api/geocode/json?latlng=$latitude,$longitude&key=$apiKey&language=th';
+    final url =
+        'https://maps.googleapis.com/maps/api/geocode/json?latlng=$latitude,$longitude&key=$apiKey&language=th';
 
     final response = await http.get(Uri.parse(url));
     if (response.statusCode == 200) {
@@ -217,9 +241,11 @@ class _MapScreenState extends State<MapScreen> {
                 onPressed: () {
                   showModalBottomSheet(
                     context: context,
-                    isScrollControlled: true, // Allow the bottom sheet to be expanded
+                    isScrollControlled:
+                        true, // Allow the bottom sheet to be expanded
                     builder: (BuildContext context) => Container(
-                      height: MediaQuery.of(context).size.height * 0.91, // ClipRRect to round the corners
+                      height: MediaQuery.of(context).size.height *
+                          0.91, // ClipRRect to round the corners
                       decoration: const BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.only(
@@ -227,7 +253,8 @@ class _MapScreenState extends State<MapScreen> {
                           topRight: Radius.circular(30.0),
                         ),
                       ),
-                      child: MapLocationSearchSheet(getUserLocation: _getUserLocation),
+                      child: MapLocationSearchSheet(
+                          getUserLocation: _getUserLocation),
                     ),
                   );
                 },
@@ -304,11 +331,14 @@ class _MapScreenState extends State<MapScreen> {
 
   void _mergeCurrentLocationWithMarkers() {
     setState(() {
+      combinedMarkers
+          .clear(); // เพิ่มบรรทัดนี้เพื่อล้างค่า combinedMarkers ก่อนที่จะรวมตัวแปรอื่น ๆ
       if (currentLocation != null) {
         combinedMarkers.add(
           Marker(
             markerId: const MarkerId("_currentLocation"),
-            icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueCyan),
+            icon:
+                BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueCyan),
             position: LatLng(
               currentLocation!.latitude,
               currentLocation!.longitude,
@@ -330,7 +360,8 @@ class _MapScreenState extends State<MapScreen> {
     ];
 
     for (String collectionId in collections) {
-      List<DocumentSnapshot> markerData = await Database.getData(path: collectionId);
+      List<DocumentSnapshot> markerData =
+          await Database.getData(path: collectionId);
       _processMarkerData(collectionId, markerData);
     }
 
@@ -339,12 +370,14 @@ class _MapScreenState extends State<MapScreen> {
     setState(() {});
   }
 
-  void _processMarkerData(String collectionId, List<DocumentSnapshot> documents) {
+  void _processMarkerData(
+      String collectionId, List<DocumentSnapshot> documents) {
     documents.forEach((doc) {
       try {
         dynamic locationData = (doc.data() as Map<String, dynamic>)['location'];
         String? name = (doc.data() as Map<String, dynamic>)['name'] as String?;
-        String? description = (doc.data() as Map<String, dynamic>)['description'] as String?;
+        String? description =
+            (doc.data() as Map<String, dynamic>)['description'] as String?;
 
         if (locationData != null && name != null) {
           // If locationData is a single GeoPoint
@@ -382,7 +415,8 @@ class _MapScreenState extends State<MapScreen> {
                   );
                   markers.add(marker);
                 } else {
-                  print("Marker color not found for collectionId: $collectionId");
+                  print(
+                      "Marker color not found for collectionId: $collectionId");
                 }
               } else {
                 print("Invalid location data element: ${location.runtimeType}");
@@ -405,15 +439,41 @@ class _MapScreenState extends State<MapScreen> {
       case 'markers/traffic-sign-blue/signs_blue':
         return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue);
       case 'markers/traffic-sign-construction-warning/signs_c-warning':
-        return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange);
+        return BitmapDescriptor.defaultMarkerWithHue(
+            BitmapDescriptor.hueOrange);
       case 'markers/traffic-sign-guide/signs_guide':
         return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueCyan);
       case 'markers/traffic-sign-red/signs_red':
         return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed);
       case 'markers/traffic-sign-warning/signs_warning':
-        return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueYellow);
+        return BitmapDescriptor.defaultMarkerWithHue(
+            BitmapDescriptor.hueYellow);
       default:
         return null;
     }
+  }
+
+  void _updateMarkerPosition(Position position) {
+    // Remove previous user location marker, if any
+    combinedMarkers
+        .removeWhere((marker) => marker.markerId.value == "_currentLocation");
+
+    // Add new user location marker
+    combinedMarkers.add(
+      Marker(
+        markerId: const MarkerId("_currentLocation"),
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueCyan),
+        position: LatLng(
+          position.latitude,
+          position.longitude,
+        ),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _positionStreamSubscription?.cancel();
+    super.dispose();
   }
 }
