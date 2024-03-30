@@ -18,12 +18,15 @@ import 'map_polyline_cancel.dart';
 class MapPolyline extends StatefulWidget {
   final Position userLocation;
   final String destinationLocation;
-  //final String time;
+  final String time;
+  final String distance;
 
   const MapPolyline({
     Key? key,
     required this.userLocation,
     required this.destinationLocation,
+    required this.time,
+    required this.distance,
     // required this.time,
   }) : super(key: key);
 
@@ -638,7 +641,6 @@ class _MapPolylineState extends State<MapPolyline> {
             children: [
               Container(
                 height: 40,
-                width: 135,
                 decoration: BoxDecoration(
                   color: Colors.white /*.withOpacity(0.9)*/,
                   borderRadius: BorderRadius.circular(10),
@@ -652,9 +654,9 @@ class _MapPolylineState extends State<MapPolyline> {
                   ],
                 ),
                 child: Padding(
-                  padding: EdgeInsets.only(left: 15, top: 10),
+                  padding: EdgeInsets.only(left: 15, right: 15, top: 10),
                   child: Text(
-                    'timeCar',
+                    widget.time + " | " + widget.distance,
                     style: AppTextStyle.sarabunPolylineTime(context),
                   ),
                 ),
