@@ -67,7 +67,7 @@ class _MapPolylineState extends State<MapPolyline> {
     _buildMarkers();
     _getCurrentLocation();
 
-    convertDestinationLocation().then((_) {
+    convertDestinationLocation(null).then((_) {
       _getDirections(
           LatLng(
             widget.userLocation.latitude,
@@ -105,8 +105,9 @@ class _MapPolylineState extends State<MapPolyline> {
     }
   }
 
-  Future<void> convertDestinationLocation() async {
+  Future<void> convertDestinationLocation(Position? start) async {
     try {
+      start ??= widget.userLocation;
       // Convert the destinationLocation to a LatLng object
       destinationLatLng = await getLatLngFromAddress(widget.destinationLocation);
 
@@ -124,15 +125,17 @@ class _MapPolylineState extends State<MapPolyline> {
         headingAccuracy: 0,
       );
 
-      routePoints = await getRoutePoints(widget.userLocation, destinationPosition);
+      routePoints = await getRoutePoints(start, destinationPosition);
 
       setState(() {
-        _markers.add(
-          Marker(
-            markerId: MarkerId('userPosition'),
-            position: LatLng(widget.userLocation.latitude, widget.userLocation.longitude),
-          ),
-        );
+        if (start != null) {
+          _markers.add(
+            Marker(
+              markerId: MarkerId('userPosition'),
+              position: LatLng(start.latitude, start.longitude),
+            ),
+          );
+        }
         _markers.add(
           Marker(
             markerId: MarkerId('destinationPosition'),
@@ -440,6 +443,8 @@ class _MapPolylineState extends State<MapPolyline> {
     // สมัครสมาชิกสำหรับอัปเดตตำแหน่ง
     _positionStreamSubscription = Geolocator.getPositionStream().listen(
       (Position position) {
+        _polylines.clear();
+        convertDestinationLocation(position);
         setState(() {
           _currentLocation = position;
         });
