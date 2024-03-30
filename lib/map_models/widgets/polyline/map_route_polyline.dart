@@ -87,7 +87,8 @@ class _MapPolylineState extends State<MapPolyline> {
         final List<dynamic> routes = data['routes'];
         if (routes.isNotEmpty) {
           final List<dynamic> steps = routes[0]['legs'][0]['steps'];
-          final List<Direction> directionsList = steps.map((step) => Direction.fromJson(step)).toList();
+          final List<Direction> directionsList =
+              steps.map((step) => Direction.fromJson(step)).toList();
           setState(() {
             _directions = directionsList;
           });
@@ -109,7 +110,8 @@ class _MapPolylineState extends State<MapPolyline> {
     try {
       start ??= widget.userLocation;
       // Convert the destinationLocation to a LatLng object
-      destinationLatLng = await getLatLngFromAddress(widget.destinationLocation);
+      destinationLatLng =
+          await getLatLngFromAddress(widget.destinationLocation);
 
       // Convert LatLng to Position
       Position destinationPosition = Position(
@@ -169,7 +171,8 @@ class _MapPolylineState extends State<MapPolyline> {
     // Replace with your actual API key
     String apiKey = dotenv.env['GOOGLE_API_KEY'] ?? 'YOUR_FALLBACK_API_KEY';
 
-    final String url = 'https://maps.googleapis.com/maps/api/geocode/json?address=$encodedAddress&key=$apiKey';
+    final String url =
+        'https://maps.googleapis.com/maps/api/geocode/json?address=$encodedAddress&key=$apiKey';
 
     final response = await http.get(Uri.parse(url));
 
@@ -185,14 +188,17 @@ class _MapPolylineState extends State<MapPolyline> {
         throw Exception('No results found for the given address.');
       }
     } else {
-      throw Exception('Failed to get latlng from address, status code: ${response.statusCode}');
+      throw Exception(
+          'Failed to get latlng from address, status code: ${response.statusCode}');
     }
   }
 
-  Future<List<LatLng>> getRoutePoints(Position start, Position destination) async {
+  Future<List<LatLng>> getRoutePoints(
+      Position start, Position destination) async {
     String apiKey = dotenv.env['GOOGLE_API_KEY'] ?? 'YOUR_FALLBACK_API_KEY';
     String startCoordinates = '${start.latitude},${start.longitude}';
-    String destinationCoordinates = '${destination.latitude},${destination.longitude}';
+    String destinationCoordinates =
+        '${destination.latitude},${destination.longitude}';
 
     final String url =
         'https://maps.googleapis.com/maps/api/directions/json?origin=$startCoordinates&destination=$destinationCoordinates&key=$apiKey';
@@ -217,7 +223,8 @@ class _MapPolylineState extends State<MapPolyline> {
         throw Exception('No routes found for the given locations.');
       }
     } else {
-      throw Exception('Failed to get directions, status code: ${response.statusCode}');
+      throw Exception(
+          'Failed to get directions, status code: ${response.statusCode}');
     }
   }
 
@@ -252,7 +259,8 @@ class _MapPolylineState extends State<MapPolyline> {
   }
 
   Future<void> loadMapTheme() async {
-    final String data = await DefaultAssetBundle.of(context).loadString('assets/map_theme/map_standard.json');
+    final String data = await DefaultAssetBundle.of(context)
+        .loadString('assets/map_theme/map_standard.json');
     setState(() {
       mapTheme = data;
     });
@@ -268,7 +276,8 @@ class _MapPolylineState extends State<MapPolyline> {
     ];
 
     for (String collectionId in collections) {
-      List<DocumentSnapshot> markerData = await Database.getData(path: collectionId);
+      List<DocumentSnapshot> markerData =
+          await Database.getData(path: collectionId);
       _processMarkerData(collectionId, markerData);
     }
 
@@ -277,12 +286,14 @@ class _MapPolylineState extends State<MapPolyline> {
     setState(() {});
   }
 
-  void _processMarkerData(String collectionId, List<DocumentSnapshot> documents) {
+  void _processMarkerData(
+      String collectionId, List<DocumentSnapshot> documents) {
     documents.forEach((doc) {
       try {
         dynamic locationData = (doc.data() as Map<String, dynamic>)['location'];
         String? name = (doc.data() as Map<String, dynamic>)['name'] as String?;
-        String? description = (doc.data() as Map<String, dynamic>)['description'] as String?;
+        String? description =
+            (doc.data() as Map<String, dynamic>)['description'] as String?;
 
         if (locationData != null && name != null) {
           // If locationData is a single GeoPoint
@@ -320,7 +331,8 @@ class _MapPolylineState extends State<MapPolyline> {
                   );
                   markers.add(marker);
                 } else {
-                  print("Marker color not found for collectionId: $collectionId");
+                  print(
+                      "Marker color not found for collectionId: $collectionId");
                 }
               } else {
                 print("Invalid location data element: ${location.runtimeType}");
@@ -343,13 +355,15 @@ class _MapPolylineState extends State<MapPolyline> {
       case 'markers/traffic-sign-blue/signs_blue':
         return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue);
       case 'markers/traffic-sign-construction-warning/signs_c-warning':
-        return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange);
+        return BitmapDescriptor.defaultMarkerWithHue(
+            BitmapDescriptor.hueOrange);
       case 'markers/traffic-sign-guide/signs_guide':
         return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueCyan);
       case 'markers/traffic-sign-red/signs_red':
         return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed);
       case 'markers/traffic-sign-warning/signs_warning':
-        return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueYellow);
+        return BitmapDescriptor.defaultMarkerWithHue(
+            BitmapDescriptor.hueYellow);
       default:
         return null;
     }
@@ -361,7 +375,8 @@ class _MapPolylineState extends State<MapPolyline> {
         desiredAccuracy: LocationAccuracy.high,
       );
       LatLng userLocation = LatLng(position.latitude, position.longitude);
-      String? placeName = await getPlaceName(position.latitude, position.longitude);
+      String? placeName =
+          await getPlaceName(position.latitude, position.longitude);
       setState(() {
         _userLocation = userLocation;
       });
@@ -397,7 +412,8 @@ class _MapPolylineState extends State<MapPolyline> {
 
   Future<String?> getPlaceName(double latitude, double longitude) async {
     final apiKey = dotenv.env['GOOGLE_API_KEY'] ?? 'YOUR_FALLBACK_API_KEY';
-    final url = 'https://maps.googleapis.com/maps/api/geocode/json?latlng=$latitude,$longitude&key=$apiKey&language=th';
+    final url =
+        'https://maps.googleapis.com/maps/api/geocode/json?latlng=$latitude,$longitude&key=$apiKey&language=th';
 
     final response = await http.get(Uri.parse(url));
     if (response.statusCode == 200) {
@@ -459,12 +475,14 @@ class _MapPolylineState extends State<MapPolyline> {
 
   void _mergeCurrentLocationWithMarkers() {
     setState(() {
-      combinedMarkers.clear(); // เพิ่มบรรทัดนี้เพื่อล้างค่า combinedMarkers ก่อนที่จะรวมตัวแปรอื่น ๆ
+      combinedMarkers
+          .clear(); // เพิ่มบรรทัดนี้เพื่อล้างค่า combinedMarkers ก่อนที่จะรวมตัวแปรอื่น ๆ
       if (_currentLocation != null) {
         combinedMarkers.add(
           Marker(
             markerId: const MarkerId("_currentLocation"),
-            icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueCyan),
+            icon:
+                BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueCyan),
             position: LatLng(
               _currentLocation!.latitude,
               _currentLocation!.longitude,
@@ -560,7 +578,10 @@ class _MapPolylineState extends State<MapPolyline> {
                 width: MediaQuery.of(context).size.width,
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
-                    colors: [Color(0xFF52B8CF).withOpacity(0.5), Color(0xFFABE9CD).withOpacity(0.5)],
+                    colors: [
+                      Color(0xFF52B8CF).withOpacity(0.5),
+                      Color(0xFFABE9CD).withOpacity(0.5)
+                    ],
                     begin: Alignment.centerLeft,
                     end: Alignment.centerRight,
                   ),
@@ -653,13 +674,15 @@ class _MapPolylineState extends State<MapPolyline> {
     double endLng = end.longitude * math.pi / 180.0;
 
     double y = math.sin(endLng - startLng) * math.cos(endLat);
-    double x = math.cos(startLat) * math.sin(endLat) - math.sin(startLat) * math.cos(endLat) * math.cos(endLng - startLng);
+    double x = math.cos(startLat) * math.sin(endLat) -
+        math.sin(startLat) * math.cos(endLat) * math.cos(endLng - startLng);
     double bearing = math.atan2(y, x);
 
     return bearing * (180.0 / math.pi);
   }
 
-  void adjustCameraBearing(GoogleMapController controller, LatLng start, LatLng end) {
+  void adjustCameraBearing(
+      GoogleMapController controller, LatLng start, LatLng end) {
     double bearing = calculateCameraBearing(start, end);
     controller.animateCamera(
       CameraUpdate.newCameraPosition(
@@ -691,7 +714,8 @@ class _MapPolylineState extends State<MapPolyline> {
       _markers.add(
         Marker(
           markerId: MarkerId('userPosition'),
-          position: LatLng(widget.userLocation.latitude, widget.userLocation.longitude),
+          position: LatLng(
+              widget.userLocation.latitude, widget.userLocation.longitude),
         ),
       );
     });
@@ -703,7 +727,10 @@ class _MapPolylineState extends State<MapPolyline> {
     );
 
     // ปรับมุมมองของกล้องให้หันไปในทิศทางที่ต้องการ
-    adjustCameraBearing(mapController, LatLng(widget.userLocation.latitude, widget.userLocation.longitude), destinationLatLng);
+    adjustCameraBearing(
+        mapController,
+        LatLng(widget.userLocation.latitude, widget.userLocation.longitude),
+        destinationLatLng);
   }
 
   void onFabPressed() async {
@@ -748,7 +775,9 @@ class _MapPolylineState extends State<MapPolyline> {
           child: ListView.builder(
             itemCount: _directions.length,
             itemBuilder: (context, index) {
-              String descriptionWithoutHtml = _directions[index].description.replaceAll(RegExp(r'<[^>]*>'), '');
+              String descriptionWithoutHtml = _directions[index]
+                  .description
+                  .replaceAll(RegExp(r'<[^>]*>'), '');
               String maneuver = _directions[index].maneuver;
               return ListTile(
                 leading: buildDirectionIcon(maneuver),
