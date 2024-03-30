@@ -10,17 +10,21 @@ import 'package:traffic_base/map_models/widgets/polyline/map_durations.dart';
 import 'package:traffic_base/styles/custom_fab.dart';
 import 'package:traffic_base/styles/text_style.dart';
 
+import 'package:traffic_base/map_models/widgets/polyline/map_route_start.dart';
+
 // ignore: unused_import
 import 'map_polyline_cancel.dart';
 
 class MapPolyline extends StatefulWidget {
   final Position userLocation;
   final String destinationLocation;
+  //final String time;
 
   const MapPolyline({
     Key? key,
     required this.userLocation,
     required this.destinationLocation,
+    // required this.time,
   }) : super(key: key);
 
   @override
@@ -482,7 +486,7 @@ class _MapPolylineState extends State<MapPolyline> {
                 child: Padding(
                   padding: EdgeInsets.only(left: 15, top: 10),
                   child: Text(
-                    '10 นาที | 5 กม.',
+                    'timeCar',
                     style: AppTextStyle.sarabunPolylineTime(context),
                   ),
                 ),

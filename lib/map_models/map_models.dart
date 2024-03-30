@@ -329,27 +329,6 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  void _mergeCurrentLocationWithMarkers() {
-    setState(() {
-      combinedMarkers
-          .clear(); // เพิ่มบรรทัดนี้เพื่อล้างค่า combinedMarkers ก่อนที่จะรวมตัวแปรอื่น ๆ
-      if (currentLocation != null) {
-        combinedMarkers.add(
-          Marker(
-            markerId: const MarkerId("_currentLocation"),
-            icon:
-                BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueCyan),
-            position: LatLng(
-              currentLocation!.latitude,
-              currentLocation!.longitude,
-            ),
-          ),
-        );
-      }
-      combinedMarkers.addAll(markers);
-    });
-  }
-
   void _buildMarkers() async {
     List<String> collections = [
       'markers/traffic-sign-blue/signs_blue',
@@ -453,22 +432,25 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  void _updateMarkerPosition(Position position) {
-    // Remove previous user location marker, if any
-    combinedMarkers
-        .removeWhere((marker) => marker.markerId.value == "_currentLocation");
-
-    // Add new user location marker
-    combinedMarkers.add(
-      Marker(
-        markerId: const MarkerId("_currentLocation"),
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueCyan),
-        position: LatLng(
-          position.latitude,
-          position.longitude,
-        ),
-      ),
-    );
+  void _mergeCurrentLocationWithMarkers() {
+    setState(() {
+      combinedMarkers
+          .clear(); // เพิ่มบรรทัดนี้เพื่อล้างค่า combinedMarkers ก่อนที่จะรวมตัวแปรอื่น ๆ
+      if (currentLocation != null) {
+        combinedMarkers.add(
+          Marker(
+            markerId: const MarkerId("_currentLocation"),
+            icon:
+                BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueCyan),
+            position: LatLng(
+              currentLocation!.latitude,
+              currentLocation!.longitude,
+            ),
+          ),
+        );
+      }
+      combinedMarkers.addAll(markers);
+    });
   }
 
   @override
