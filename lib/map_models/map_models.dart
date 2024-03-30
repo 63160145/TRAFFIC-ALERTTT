@@ -1,5 +1,5 @@
 import 'dart:convert';
-
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -7,6 +7,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'package:traffic_base/services/database.dart';
+import 'package:location/location.dart' as lct;
 
 import '../styles/custom_fab.dart';
 
@@ -26,10 +27,16 @@ class _MapScreenState extends State<MapScreen> {
 
   String mapTheme = '';
 
-  late GoogleMapController mapController;
+  // late GoogleMapController mapController;
   late MapZoomController zoomController;
 
   Position? currentLocation;
+  Completer<GoogleMapController> mapController = Completer();
+  lct.Location location = lct.Location();
+  late lct.LocationData? locationData = lct.LocationData.fromMap({
+    "latitude": 0.0,
+    "longitude": 0.0,
+  });
 
   // ignore: unused_field
   late LatLng _userLocation;
@@ -49,6 +56,23 @@ class _MapScreenState extends State<MapScreen> {
     _getCurrentLocation();
     _getUserLocation();
     _startLocationUpdates();
+    location.onLocationChanged.listen((lct.LocationData currentLocationData) {
+      setState(() {
+        locationData = currentLocationData;
+      });
+      // set camera position
+      setCameraPosition();
+    });
+  }
+
+  Future<void> setCameraPosition() async {
+    final GoogleMapController controller = await mapController.future;
+    controller.moveCamera(CameraUpdate.newCameraPosition(CameraPosition(
+        target: LatLng(
+          locationData?.latitude ?? 0.0,
+          locationData?.longitude ?? 0.0,
+        ),
+        zoom: 18.0)));
   }
 
   Future<void> _initializeMap() async {
@@ -57,8 +81,7 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   Future<void> loadMapTheme() async {
-    final String data = await DefaultAssetBundle.of(context)
-        .loadString('assets/map_theme/map_standard.json');
+    final String data = await DefaultAssetBundle.of(context).loadString('assets/map_theme/map_standard.json');
     setState(() {
       mapTheme = data;
     });
@@ -105,12 +128,11 @@ class _MapScreenState extends State<MapScreen> {
         desiredAccuracy: LocationAccuracy.high,
       );
       LatLng userLocation = LatLng(position.latitude, position.longitude);
-      String? placeName =
-          await getPlaceName(position.latitude, position.longitude);
+      String? placeName = await getPlaceName(position.latitude, position.longitude);
       setState(() {
         _userLocation = userLocation;
       });
-      mapController.animateCamera(CameraUpdate.newLatLng(userLocation));
+      // mapController.animateCamera(CameraUpdate.newLatLng(userLocation));
 
       if (placeName != null) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -140,8 +162,7 @@ class _MapScreenState extends State<MapScreen> {
 
   Future<String?> getPlaceName(double latitude, double longitude) async {
     final apiKey = dotenv.env['GOOGLE_API_KEY'] ?? 'YOUR_FALLBACK_API_KEY';
-    final url =
-        'https://maps.googleapis.com/maps/api/geocode/json?latlng=$latitude,$longitude&key=$apiKey&language=th';
+    final url = 'https://maps.googleapis.com/maps/api/geocode/json?latlng=$latitude,$longitude&key=$apiKey&language=th';
 
     final response = await http.get(Uri.parse(url));
     if (response.statusCode == 200) {
@@ -170,7 +191,8 @@ class _MapScreenState extends State<MapScreen> {
               ),
               //MapStyle
               onMapCreated: (GoogleMapController controller) {
-                mapController = controller;
+                // mapController = controller;
+                mapController.complete(controller);
                 zoomController = MapZoomController(mapController: controller);
 
                 if (mapTheme.isNotEmpty) {
@@ -195,11 +217,9 @@ class _MapScreenState extends State<MapScreen> {
                 onPressed: () {
                   showModalBottomSheet(
                     context: context,
-                    isScrollControlled:
-                        true, // Allow the bottom sheet to be expanded
+                    isScrollControlled: true, // Allow the bottom sheet to be expanded
                     builder: (BuildContext context) => Container(
-                      height: MediaQuery.of(context).size.height *
-                          0.91, // ClipRRect to round the corners
+                      height: MediaQuery.of(context).size.height * 0.91, // ClipRRect to round the corners
                       decoration: const BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.only(
@@ -207,8 +227,7 @@ class _MapScreenState extends State<MapScreen> {
                           topRight: Radius.circular(30.0),
                         ),
                       ),
-                      child: MapLocationSearchSheet(
-                          getUserLocation: _getUserLocation),
+                      child: MapLocationSearchSheet(getUserLocation: _getUserLocation),
                     ),
                   );
                 },
@@ -289,8 +308,7 @@ class _MapScreenState extends State<MapScreen> {
         combinedMarkers.add(
           Marker(
             markerId: const MarkerId("_currentLocation"),
-            icon:
-                BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueCyan),
+            icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueCyan),
             position: LatLng(
               currentLocation!.latitude,
               currentLocation!.longitude,
@@ -312,8 +330,7 @@ class _MapScreenState extends State<MapScreen> {
     ];
 
     for (String collectionId in collections) {
-      List<DocumentSnapshot> markerData =
-          await Database.getData(path: collectionId);
+      List<DocumentSnapshot> markerData = await Database.getData(path: collectionId);
       _processMarkerData(collectionId, markerData);
     }
 
@@ -322,14 +339,12 @@ class _MapScreenState extends State<MapScreen> {
     setState(() {});
   }
 
-  void _processMarkerData(
-      String collectionId, List<DocumentSnapshot> documents) {
+  void _processMarkerData(String collectionId, List<DocumentSnapshot> documents) {
     documents.forEach((doc) {
       try {
         dynamic locationData = (doc.data() as Map<String, dynamic>)['location'];
         String? name = (doc.data() as Map<String, dynamic>)['name'] as String?;
-        String? description =
-            (doc.data() as Map<String, dynamic>)['description'] as String?;
+        String? description = (doc.data() as Map<String, dynamic>)['description'] as String?;
 
         if (locationData != null && name != null) {
           // If locationData is a single GeoPoint
@@ -367,8 +382,7 @@ class _MapScreenState extends State<MapScreen> {
                   );
                   markers.add(marker);
                 } else {
-                  print(
-                      "Marker color not found for collectionId: $collectionId");
+                  print("Marker color not found for collectionId: $collectionId");
                 }
               } else {
                 print("Invalid location data element: ${location.runtimeType}");
@@ -391,15 +405,13 @@ class _MapScreenState extends State<MapScreen> {
       case 'markers/traffic-sign-blue/signs_blue':
         return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue);
       case 'markers/traffic-sign-construction-warning/signs_c-warning':
-        return BitmapDescriptor.defaultMarkerWithHue(
-            BitmapDescriptor.hueOrange);
+        return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange);
       case 'markers/traffic-sign-guide/signs_guide':
         return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueCyan);
       case 'markers/traffic-sign-red/signs_red':
         return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed);
       case 'markers/traffic-sign-warning/signs_warning':
-        return BitmapDescriptor.defaultMarkerWithHue(
-            BitmapDescriptor.hueYellow);
+        return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueYellow);
       default:
         return null;
     }
