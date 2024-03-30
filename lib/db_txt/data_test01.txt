@@ -1,0 +1,56 @@
+import 'package:firebase_core/firebase_core.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
+
+  // ดึงข้อมูลจาก markers
+  final markersCollection = FirebaseFirestore.instance.collection('markers');
+  final markersQuerySnapshot = await markersCollection.get();
+
+  // วนซ้ำเอกสารใน markers
+  for (var markerDoc in markersQuerySnapshot.docs) {
+    // ดึง ID ของเอกสาร
+    final markerId = markerDoc.id;
+
+    // ดึงชื่อคอลเล็กชั่นย่อย
+    final subcollectionName = 'signs_red';
+
+    // เข้าถึงคอลเล็กชั่นย่อย
+    final subcollectionRef = markerDoc.reference.collection(subcollectionName);
+
+    // ดึงข้อมูลจากคอลเล็กชั่นย่อย
+    final subcollectionQuerySnapshot = await subcollectionRef.get();
+
+    // วนซ้ำเอกสารในคอลเล็กชั่นย่อย
+    for (var subcollectionDoc in subcollectionQuerySnapshot.docs) {
+      // ดึง ID ของเอกสาร
+      final subcollectionDocId = subcollectionDoc.id;
+
+      // ดึงข้อมูลของเอกสาร
+      final subcollectionDocData = subcollectionDoc.data();
+
+      // ตรวจสอบว่าฟิลด์ 'location' มีค่าและไม่ใช่ null ก่อนที่จะเรียกใช้เมท็อด
+      if (subcollectionDocData.containsKey('location')) {
+        final List<dynamic> locations = subcollectionDocData['location'];
+        for (var locationData in locations) {
+          if (locationData is GeoPoint) {
+            final GeoPoint location = locationData;
+            // พิมพ์ข้อมูล
+            print('Marker ID: $markerId');
+            print('Subcollection Name: $subcollectionName');
+            print('Subcollection Doc ID: $subcollectionDocId');
+            print('Latitude: ${location.latitude}');
+            print('Longitude: ${location.longitude}');
+          } else {
+            print('Location data is not in the correct format');
+          }
+        }
+      } else {
+        print('Location data is missing or null');
+      }
+    }
+  }
+}

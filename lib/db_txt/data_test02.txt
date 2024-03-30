@@ -1,0 +1,145 @@
+import 'package:firebase_core/firebase_core.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
+
+  // รายการของไอดีที่ต้องการดึงข้อมูล
+  List<String> ids = [
+    'traffic-sign-blue',
+    'traffic-sign-construction-warning',
+    'traffic-sign-guide',
+    'traffic-sign-red',
+    'traffic-sign-warning',
+  ];
+
+  // รายการของชื่อ subcollection
+  List<String> subcollectionNames = [
+    'signs_blue',
+    'signs_c-warning',
+    'signs_guide',
+    'signs_red',
+    'signs_warning',
+  ];
+
+  // วนลูปผ่านรายการไอดี
+  for (var i = 0; i < ids.length; i++) {
+    // ดึงข้อมูลจาก markers
+    final markersCollection = FirebaseFirestore.instance.collection('markers');
+    final markerDoc = await markersCollection.doc(ids[i]).get();
+
+    if (markerDoc.exists) {
+      // ดึงข้อมูลจากเอกสาร
+      final markerId = markerDoc.id;
+
+      // ดึงชื่อคอลเล็กชั่นย่อยจากรายการชื่อ subcollection
+      final subcollectionName = subcollectionNames[i];
+
+      // ดึงเอกสารย่อยจาก subcollection
+      final subcollectionQuerySnapshot =
+          await markerDoc.reference.collection(subcollectionName).get();
+
+      // วนลูปผ่านเอกสารย่อยทั้งหมดใน subcollection
+      for (var subcollectionDoc in subcollectionQuerySnapshot.docs) {
+        // ดึงข้อมูลจากเอกสารย่อย
+        final subcollectionDocId = subcollectionDoc.id;
+        final subcollectionDocData = subcollectionDoc.data();
+
+        // ตรวจสอบว่ามีข้อมูลพิกัดอยู่หรือไม่
+        if (subcollectionDocData.containsKey('location')) {
+          // ดึงข้อมูลพิกัด
+          final location = subcollectionDocData['location'];
+
+          // ตรวจสอบว่าพิกัดเป็น List หรือไม่
+          if (location is List && location.isNotEmpty) {
+            // วนลูปผ่านทุกจุดพิกัดใน List
+            for (var point in location) {
+              // ตรวจสอบว่าจุดพิกัดเป็น GeoPoint หรือไม่
+              if (point is GeoPoint) {
+                // พิมพ์ข้อมูลพิกัด
+                print('Marker ID: $markerId');
+                print('Subcollection Name: $subcollectionName');
+                print('Subcollection Doc ID: $subcollectionDocId');
+                print('Latitude: ${point.latitude}');
+                print('Longitude: ${point.longitude}');
+              } else {
+                print('Location data is not in the correct format');
+              }
+            }
+          } else if (location is GeoPoint) {
+            // พิมพ์ข้อมูลพิกัด
+            print('Marker ID: $markerId');
+            print('Subcollection Name: $subcollectionName');
+            print('Subcollection Doc ID: $subcollectionDocId');
+            print('Latitude: ${location.latitude}');
+            print('Longitude: ${location.longitude}');
+          } else {
+            print('Location data is not in the correct format');
+          }
+        } else {
+          print('Location data not found or invalid format');
+        }
+      }
+    } else {
+      print('Document with ID ${ids[i]} does not exist');
+    }
+  }
+}
+
+##Run results##
+
+***Marker ID: traffic-sign-blue***
+I/flutter (29033): Marker ID: traffic-sign-blue
+I/flutter (29033): Subcollection Name: signs_blue
+I/flutter (29033): Subcollection Doc ID: signs_blue01
+I/flutter (29033): Latitude: 13.27453
+I/flutter (29033): Longitude: 100.93107
+
+***Marker ID: traffic-sign-construction-warning***
+I/flutter (29033): Marker ID: traffic-sign-construction-warning
+I/flutter (29033): Subcollection Name: signs_c-warning
+I/flutter (29033): Subcollection Doc ID: signs_c-warning01
+I/flutter (29033): Latitude: 13.27453
+I/flutter (29033): Longitude: 100.93107
+
+***Marker ID: traffic-sign-guide***
+I/flutter (29033): Marker ID: traffic-sign-guide
+I/flutter (29033): Subcollection Name: signs_guide
+I/flutter (29033): Subcollection Doc ID: signs_guide01
+I/flutter (29033): Latitude: 13.27453
+I/flutter (29033): Longitude: 100.93107
+
+***Marker ID: traffic-sign-red***
+I/flutter (29033): Marker ID: traffic-sign-red
+I/flutter (29033): Subcollection Name: signs_red
+I/flutter (29033): Subcollection Doc ID: signs_red01
+I/flutter (29033): Latitude: 13.27443
+I/flutter (29033): Longitude: 100.93108
+***Marker ID: traffic-sign-red***
+I/flutter (29033): Marker ID: traffic-sign-red
+I/flutter (29033): Subcollection Name: signs_red
+I/flutter (29033): Subcollection Doc ID: signs_red01
+I/flutter (29033): Latitude: 13.25453
+I/flutter (29033): Longitude: 100.93108
+***Marker ID: traffic-sign-red***
+I/flutter (29033): Marker ID: traffic-sign-red
+I/flutter (29033): Subcollection Name: signs_red
+I/flutter (29033): Subcollection Doc ID: signs_red02
+I/flutter (29033): Latitude: 13.22453
+I/flutter (29033): Longitude: 100.93101
+
+***Marker ID: traffic-sign-red***
+I/flutter (29033): Marker ID: traffic-sign-red
+I/flutter (29033): Subcollection Name: signs_red
+I/flutter (29033): Subcollection Doc ID: signs_red02
+I/flutter (29033): Latitude: 13.27456
+I/flutter (29033): Longitude: 100.93307
+
+***Marker ID: traffic-sign-warning***
+I/flutter (29033): Marker ID: traffic-sign-warning
+I/flutter (29033): Subcollection Name: signs_warning
+I/flutter (29033): Subcollection Doc ID: signs_warning01
+I/flutter (29033): Latitude: 13.27453
+I/flutter (29033): Longitude: 100.93107

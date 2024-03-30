@@ -1,0 +1,557 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:permission_handler/permission_handler.dart';
+
+class MapScreen extends StatefulWidget {
+  const MapScreen({super.key});
+
+  @override
+  State<MapScreen> createState() => _MapScreenState();
+}
+
+class _MapScreenState extends State<MapScreen> {
+  GoogleMapController? mapController;
+  bool mapToggle = false;
+  Position? currentLocation;
+  List<Marker> markers = [];
+
+  String mapTheme = '';
+
+  @override
+  void initState() {
+    super.initState();
+    getCurrentLocation();
+    loadMapTheme();
+  }
+
+  Future<void> onMapCreated(GoogleMapController controller) async {
+    mapController = controller;
+    mapController?.setMapStyle(mapTheme);
+  }
+
+  Future<void> loadMapTheme() async {
+    final String data = await DefaultAssetBundle.of(context)
+        .loadString('assets/map_theme/map_standard.json');
+    setState(() {
+      mapTheme = data;
+      print('Map theme loaded: $mapTheme');
+    });
+  }
+
+  Future<void> getCurrentLocation() async {
+    final locationStatus = await Permission.locationWhenInUse.request();
+
+    if (locationStatus == PermissionStatus.granted) {
+      try {
+        Position res = await Geolocator.getCurrentPosition();
+        setState(() {
+          currentLocation = res;
+          mapToggle = true;
+        });
+      } on PlatformException catch (e) {
+        if (e.code == 'PERMISSION_DENIED') {
+          print('User denied location permission.');
+        } else if (e.code == 'PERMISSION_DENIED_FOREVER') {
+          print('User denied location permission permanently.');
+        }
+        print("Error getting location: $e");
+      }
+    } else if (locationStatus == PermissionStatus.permanentlyDenied) {
+      openAppSettings();
+    } else {
+      print('Location permission status: $locationStatus');
+    }
+  }
+
+  Future<List<DocumentSnapshot>> getMarkerData() async {
+    try {
+      CollectionReference markers =
+          FirebaseFirestore.instance.collection('markers');
+      QuerySnapshot querySnapshot = await markers.get();
+      return querySnapshot.docs;
+    } catch (e) {
+      print("Error fetching marker data: $e");
+      return [];
+    }
+  }
+
+  void _buildMarkers() async {
+    List<DocumentSnapshot> documents = await getMarkerData();
+    markers.clear();
+    documents.forEach((doc) {
+      try {
+        List<dynamic>? locationData =
+            (doc.data() as Map<String, dynamic>)['location'] as List<dynamic>?;
+        String? name = (doc.data() as Map<String, dynamic>)['name'] as String?;
+
+        if (locationData != null && name != null) {
+          for (var location in locationData) {
+            if (location is GeoPoint) {
+              Marker marker = Marker(
+                markerId: MarkerId(doc.id + location.hashCode.toString()),
+                position: LatLng(location.latitude, location.longitude),
+                infoWindow: InfoWindow(title: name),
+              );
+              markers.add(marker);
+            } else {
+              print("Invalid location data element: ${location.runtimeType}");
+            }
+          }
+        } else {
+          print("Invalid marker data: document ${doc.id}");
+        }
+      } catch (e) {
+        print("Error processing marker data: $e");
+      }
+    });
+    setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Geolocations Test'),
+        centerTitle: true,
+      ),
+      body: Stack(
+        children: [
+          Container(
+            height: MediaQuery.of(context).size.height,
+            width: double.infinity,
+            child: mapToggle
+                ? GoogleMap(
+                    onMapCreated: onMapCreated,
+                    initialCameraPosition: CameraPosition(
+                      target: currentLocation != null
+                          ? LatLng(currentLocation!.latitude,
+                              currentLocation!.longitude)
+                          : LatLng(-33.8688, 151.2093), // Default location
+                      zoom: 12,
+                    ),
+                    zoomControlsEnabled: false,
+                    compassEnabled: false,
+                    markers: Set<Marker>.of(markers),
+                  )
+                : Center(
+                    child: CircularProgressIndicator(),
+                  ),
+          ),
+          Align(
+            alignment: Alignment.bottomRight,
+            child: FloatingActionButton(
+              onPressed: _buildMarkers,
+              child: Icon(Icons.refresh),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:traffic_base/service/database.dart';
+
+class MapScreen extends StatefulWidget {
+  const MapScreen({Key? key}) : super(key: key);
+
+  @override
+  State<MapScreen> createState() => _MapScreenState();
+}
+
+class _MapScreenState extends State<MapScreen> {
+  GoogleMapController? mapController;
+  bool mapToggle = false;
+  Position? currentLocation;
+  List<Marker> markers = [];
+  String mapTheme = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeMap();
+    _startLocationUpdates();
+  }
+
+  void _initializeMap() async {
+    await _loadMapTheme();
+    _buildMarkers();
+  }
+
+  Future<void> _onMapCreated(GoogleMapController controller) async {
+    mapController = controller;
+    mapController?.setMapStyle(mapTheme);
+  }
+
+  Future<void> _loadMapTheme() async {
+    final String data = await DefaultAssetBundle.of(context)
+        .loadString('assets/map_theme/map_standard.json');
+    setState(() {
+      mapTheme = data;
+      print('Map theme loaded: $mapTheme');
+    });
+  }
+
+  Future<void> _startLocationUpdates() async {
+    await _getCurrentLocation();
+    Geolocator.getPositionStream().listen((Position position) {
+      setState(() {
+        currentLocation = position;
+      });
+    });
+  }
+
+  Future<void> _getCurrentLocation() async {
+    final locationStatus = await Permission.locationWhenInUse.request();
+
+    if (locationStatus == PermissionStatus.granted) {
+      try {
+        Position res = await Geolocator.getCurrentPosition();
+        setState(() {
+          currentLocation = res;
+          mapToggle = true;
+        });
+      } on PlatformException catch (e) {
+        if (e.code == 'PERMISSION_DENIED') {
+          print('User denied location permission.');
+        } else if (e.code == 'PERMISSION_DENIED_FOREVER') {
+          print('User denied location permission permanently.');
+        }
+        print("Error getting location: $e");
+      }
+    } else if (locationStatus == PermissionStatus.permanentlyDenied) {
+      openAppSettings();
+    } else {
+      print('Location permission status: $locationStatus');
+    }
+  }
+
+  void _buildMarkers() async {
+    List<String> collections = [
+      'markers/traffic-sign-blue/signs_blue',
+      'markers/traffic-sign-construction-warning/signs_c-warning',
+      'markers/traffic-sign-guide/signs_guide',
+      'markers/traffic-sign-red/signs_red',
+      'markers/traffic-sign-warning/signs_warning'
+    ];
+
+    for (String collectionId in collections) {
+      List<DocumentSnapshot> markerData =
+          await Database.getData(path: collectionId);
+      _processMarkerData(markerData);
+    }
+
+    setState(() {});
+  }
+
+  void _processMarkerData(List<DocumentSnapshot> documents) {
+    documents.forEach((doc) {
+      try {
+        dynamic locationData = (doc.data() as Map<String, dynamic>)['location'];
+
+        String? name = (doc.data() as Map<String, dynamic>)['name'] as String?;
+        String? collectionId =
+            (doc.data() as Map<String, dynamic>)['collectionId'] as String?;
+
+        if (locationData != null && name != null) {
+          // If locationData is a single GeoPoint
+          if (locationData is GeoPoint) {
+            Marker marker = Marker(
+              markerId: MarkerId(doc.id),
+              position: LatLng(locationData.latitude, locationData.longitude),
+              infoWindow: InfoWindow(title: name),
+            );
+            markers.add(marker);
+          }
+          // If locationData is a list of GeoPoint objects
+          else if (locationData is List<dynamic>) {
+            for (var location in locationData) {
+              if (location is GeoPoint) {
+                Marker marker = Marker(
+                  markerId: MarkerId(doc.id + location.hashCode.toString()),
+                  position: LatLng(location.latitude, location.longitude),
+                  infoWindow: InfoWindow(title: name),
+                );
+                print("Marker added: $marker");
+                markers.add(marker);
+              } else {
+                print("Invalid location data element: ${location.runtimeType}");
+              }
+            }
+          } else {
+            print("Invalid location data format");
+          }
+        } else {
+          print("Invalid marker data: document ${doc.id}");
+        }
+      } catch (e) {
+        print("Error processing marker data: $e");
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Stack(
+        children: [
+          mapToggle
+              ? GoogleMap(
+                  onMapCreated: _onMapCreated,
+                  initialCameraPosition: CameraPosition(
+                    target: currentLocation != null
+                        ? LatLng(currentLocation!.latitude,
+                            currentLocation!.longitude)
+                        : LatLng(-33.8688, 151.2093), // Default location
+                    zoom: 12,
+                  ),
+                  zoomControlsEnabled: false,
+                  compassEnabled: false,
+                  markers: Set<Marker>.of(markers),
+                )
+              : Center(
+                  child: CircularProgressIndicator(),
+                ),
+          Align(
+            alignment: Alignment.bottomRight,
+            child: FloatingActionButton(
+              onPressed: _buildMarkers,
+              child: Icon(Icons.refresh),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:traffic_base/service/database.dart';
+
+class MapScreen extends StatefulWidget {
+  const MapScreen({Key? key}) : super(key: key);
+
+  @override
+  State<MapScreen> createState() => _MapScreenState();
+}
+
+class _MapScreenState extends State<MapScreen> {
+  GoogleMapController? mapController;
+  bool mapToggle = false;
+  Position? currentLocation;
+  List<Marker> markers = [];
+  String mapTheme = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeMap();
+    _startLocationUpdates();
+  }
+
+  void _initializeMap() async {
+    await _loadMapTheme();
+    _buildMarkers();
+  }
+
+  Future<void> _onMapCreated(GoogleMapController controller) async {
+    mapController = controller;
+    mapController?.setMapStyle(mapTheme);
+  }
+
+  Future<void> _loadMapTheme() async {
+    final String data = await DefaultAssetBundle.of(context)
+        .loadString('assets/map_theme/map_standard.json');
+    setState(() {
+      mapTheme = data;
+      print('Map theme loaded: $mapTheme');
+    });
+  }
+
+  Future<void> _startLocationUpdates() async {
+    await _getCurrentLocation();
+    Geolocator.getPositionStream().listen((Position position) {
+      setState(() {
+        currentLocation = position;
+      });
+    });
+  }
+
+  Future<void> _getCurrentLocation() async {
+    final locationStatus = await Permission.locationWhenInUse.request();
+
+    if (locationStatus == PermissionStatus.granted) {
+      try {
+        Position res = await Geolocator.getCurrentPosition();
+        setState(() {
+          currentLocation = res;
+          mapToggle = true;
+        });
+      } on PlatformException catch (e) {
+        if (e.code == 'PERMISSION_DENIED') {
+          print('User denied location permission.');
+        } else if (e.code == 'PERMISSION_DENIED_FOREVER') {
+          print('User denied location permission permanently.');
+        }
+        print("Error getting location: $e");
+      }
+    } else if (locationStatus == PermissionStatus.permanentlyDenied) {
+      openAppSettings();
+    } else {
+      print('Location permission status: $locationStatus');
+    }
+  }
+
+  void _buildMarkers() async {
+    List<String> collections = [
+      'markers/traffic-sign-blue/signs_blue',
+      'markers/traffic-sign-construction-warning/signs_c-warning',
+      'markers/traffic-sign-guide/signs_guide',
+      'markers/traffic-sign-red/signs_red',
+      'markers/traffic-sign-warning/signs_warning'
+    ];
+
+    for (String collectionId in collections) {
+      List<DocumentSnapshot> markerData =
+          await Database.getData(path: collectionId);
+      _processMarkerData(collectionId, markerData);
+    }
+
+    setState(() {});
+  }
+
+  void _processMarkerData(
+      String collectionId, List<DocumentSnapshot> documents) {
+    documents.forEach((doc) {
+      try {
+        dynamic locationData = (doc.data() as Map<String, dynamic>)['location'];
+        String? name = (doc.data() as Map<String, dynamic>)['name'] as String?;
+        String? description =
+            (doc.data() as Map<String, dynamic>)['description'] as String?;
+
+        if (locationData != null && name != null) {
+          // If locationData is a single GeoPoint
+          if (locationData is GeoPoint) {
+            BitmapDescriptor? markerColor = _getMarkerColor(collectionId);
+            if (markerColor != null) {
+              Marker marker = Marker(
+                markerId: MarkerId(doc.id),
+                position: LatLng(locationData.latitude, locationData.longitude),
+                infoWindow: InfoWindow(
+                  title: "ป้าย $name",
+                  snippet: description ?? "ไม่มีข้อความเพิ่มเติม",
+                ),
+                icon: markerColor,
+              );
+              markers.add(marker);
+            } else {
+              print("Marker color not found for collectionId: $collectionId");
+            }
+          }
+          // If locationData is a list of GeoPoint objects
+          else if (locationData is List<dynamic>) {
+            for (var location in locationData) {
+              if (location is GeoPoint) {
+                BitmapDescriptor? markerColor = _getMarkerColor(collectionId);
+                if (markerColor != null) {
+                  Marker marker = Marker(
+                    markerId: MarkerId(doc.id + location.hashCode.toString()),
+                    position: LatLng(location.latitude, location.longitude),
+                    infoWindow: InfoWindow(
+                      title: "ป้าย $name",
+                      snippet: description ?? "",
+                    ),
+                    icon: markerColor,
+                  );
+                  markers.add(marker);
+                } else {
+                  print(
+                      "Marker color not found for collectionId: $collectionId");
+                }
+              } else {
+                print("Invalid location data element: ${location.runtimeType}");
+              }
+            }
+          } else {
+            print("Invalid location data format");
+          }
+        } else {
+          print("Invalid marker data: document ${doc.id}");
+        }
+      } catch (e) {
+        print("Error processing marker data: $e");
+      }
+    });
+  }
+
+  BitmapDescriptor? _getMarkerColor(String collectionId) {
+    switch (collectionId) {
+      case 'markers/traffic-sign-blue/signs_blue':
+        return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue);
+      case 'markers/traffic-sign-construction-warning/signs_c-warning':
+        return BitmapDescriptor.defaultMarkerWithHue(
+            BitmapDescriptor.hueOrange);
+      case 'markers/traffic-sign-guide/signs_guide':
+        return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueCyan);
+      case 'markers/traffic-sign-red/signs_red':
+        return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed);
+      case 'markers/traffic-sign-warning/signs_warning':
+        return BitmapDescriptor.defaultMarkerWithHue(
+            BitmapDescriptor.hueYellow);
+      default:
+        return null;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Stack(
+        children: [
+          mapToggle
+              ? GoogleMap(
+                  onMapCreated: _onMapCreated,
+                  initialCameraPosition: CameraPosition(
+                    target: currentLocation != null
+                        ? LatLng(currentLocation!.latitude,
+                            currentLocation!.longitude)
+                        : LatLng(-33.8688, 151.2093), // Default location
+                    zoom: 13,
+                  ),
+                  zoomControlsEnabled: true,
+                  compassEnabled: false,
+                  markers: Set<Marker>.of(markers),
+                )
+              : Center(
+                  child: CircularProgressIndicator(
+                    color: Colors.blue.shade200,
+                  ),
+                ),
+          /*Align(
+            alignment: Alignment.bottomRight,
+            child: FloatingActionButton(
+              onPressed: _buildMarkers,
+              child: Icon(Icons.refresh),
+            ),
+          ),*/
+        ],
+      ),
+    );
+  }
+}

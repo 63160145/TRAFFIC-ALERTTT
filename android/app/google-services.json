@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "207429664822",
+    "project_id": "traffic-test-b737b",
+    "storage_bucket": "traffic-test-b737b.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:207429664822:android:024d4cfb480187de031897",
+        "android_client_info": {
+          "package_name": "com.example.traffic_base"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBTfGjV61bDhZs4ZOE7QBnVhw8LiRJx3pQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
