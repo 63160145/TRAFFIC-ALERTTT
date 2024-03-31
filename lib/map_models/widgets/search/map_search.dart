@@ -13,8 +13,7 @@ import 'place_auto_complate_response.dart';
 class MapLocationSearchSheet extends StatefulWidget {
   final Function() getUserLocation;
 
-  const MapLocationSearchSheet({Key? key, required this.getUserLocation})
-      : super(key: key);
+  const MapLocationSearchSheet({super.key, required this.getUserLocation});
 
   @override
   State<MapLocationSearchSheet> createState() => _MapLocationSearchSheetState();
@@ -24,6 +23,7 @@ class _MapLocationSearchSheetState extends State<MapLocationSearchSheet> {
   TextEditingController searchController = TextEditingController();
   List<AutocompletePrediction> placePredictions = [];
 
+  // ignore: unused_field
   String? _inputText;
 
   void placeAutocomplate(String query) async {

@@ -10,15 +10,15 @@ class CustomFAB extends StatelessWidget {
   final String? heroTag; // เพิ่มพารามิเตอร์ heroTag
 
   const CustomFAB({
-    Key? key,
+    super.key,
     required this.onPressed,
     required this.iconData,
     this.backgroundColor,
     this.iconColor,
-    this.elevation = 1.0,
-    this.shapeRadius = 10.0,
+    this.elevation = 3,
+    this.shapeRadius = 15.0,
     this.heroTag, // เพิ่มพารามิเตอร์ heroTag
-  }) : super(key: key); // เพิ่ม super(key: key) เพื่อส่งค่า key ไปยังคลาสแม่
+  }); // เพิ่ม super(key: key) เพื่อส่งค่า key ไปยังคลาสแม่
 
   @override
   Widget build(BuildContext context) {

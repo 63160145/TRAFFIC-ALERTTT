@@ -1,16 +1,14 @@
 import 'dart:convert';
 import 'dart:async';
 import 'dart:typed_data';
-import 'package:flutter/services.dart';
-import 'package:http/http.dart' as http;
-import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:collection/collection.dart';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:http/http.dart' as http;
 import 'package:traffic_base/services/database.dart';
 
 import '../styles/colors_theme.dart';
@@ -76,6 +74,16 @@ class _MapScreenState extends State<MapScreen> {
   void dispose() {
     textSwitchTimer?.cancel();
     super.dispose();
+  }
+
+  Future<Uint8List> _getBytesFromUrl(String url) async {
+    final http.Response response = await http.get(Uri.parse(url));
+    return response.bodyBytes;
+  }
+
+  Future<BitmapDescriptor> _getMarkerIcon(String iconUrl) async {
+    final Uint8List markerIconBytes = await _getBytesFromUrl(iconUrl);
+    return BitmapDescriptor.fromBytes(markerIconBytes);
   }
 
   Future<void> _initializeMap() async {
@@ -657,13 +665,14 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   void onCategorySelected(String? category) {
-    print("Category selected: $category");
     setState(() {
-      selectedCategory = category;
-      combinedMarkers.clear();
-      markers.clear();
-      _buildMarkers(category: selectedCategory);
+      selectedCategory = category; // อัปเดตหมวดหมู่ที่ถูกเลือก
+      combinedMarkers.clear(); // เคลียร์รายการเครื่องหมายรวม
+      markers.clear(); // เคลียร์รายการเครื่องหมายที่แยกออกมา
     });
+
+    _buildMarkers(
+        category: selectedCategory); // เรียก _buildMarkers ภายนอก setState
   }
 
   void _buildMarkers({String? category}) async {
@@ -679,12 +688,14 @@ class _MapScreenState extends State<MapScreen> {
         'markers/traffic-sign-warning/signs_warning',
       ];
     }
+
     combinedMarkers.clear();
 
     for (String collectionId in collections) {
       List<DocumentSnapshot> markerData =
           await Database.getData(path: collectionId);
-      _processMarkerData(collectionId, markerData);
+      _processMarkerData(collectionId, markerData,
+          'https://firebasestorage.googleapis.com/v0/b/traffic-test-b737b.appspot.com/o/signs_blue%2Fsigns_blue01.png?alt=media&token=0e87b326-7fe7-449f-a7dd-f5abb2864e92');
     }
 
     _mergeCurrentLocationWithMarkers();
@@ -693,71 +704,85 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   void _processMarkerData(
-      String collectionId, List<DocumentSnapshot> documents) async {
-    var markerIconCache = <String, BitmapDescriptor>{};
-    var newMarkers = Set<Marker>();
-
-    for (var doc in documents) {
+      String collectionId, List<DocumentSnapshot> documents, String iconUrl) {
+    documents.forEach((doc) async {
       try {
-        var data = doc.data() as Map<String, dynamic>;
-        var name = data['name'] as String?;
-        var description = data['description'] as String?;
-        var iconUrl = data['iconUrl'] as String?;
-        List<dynamic> locations = data['location']; // location is an array
+        dynamic locationData = (doc.data() as Map<String, dynamic>)['location'];
+        String? name = (doc.data() as Map<String, dynamic>)['name'] as String?;
+        String? description =
+            (doc.data() as Map<String, dynamic>)['description'] as String?;
 
-        if (name != null && iconUrl != null && locations is List) {
-          BitmapDescriptor markerIcon;
-
-          if (markerIconCache.containsKey(iconUrl)) {
-            markerIcon = markerIconCache[iconUrl]!;
-          } else {
-            markerIcon = await getMarkerBitmapFromUrl(iconUrl);
-            markerIconCache[iconUrl] = markerIcon;
-          }
-
-          // Create a marker for each GeoPoint in the array
-          for (var geoPoint in locations) {
-            if (geoPoint is GeoPoint) {
-              if (selectedCategory == null ||
-                  collectionId.contains(selectedCategory!)) {
-                newMarkers.add(Marker(
-                  markerId: MarkerId(doc.id + geoPoint.hashCode.toString()),
-                  position: LatLng(geoPoint.latitude, geoPoint.longitude),
-                  infoWindow: InfoWindow(title: name, snippet: description),
-                  icon: markerIcon,
-                ));
-              }
+        if (locationData != null && name != null) {
+          // If locationData is a single GeoPoint
+          if (locationData is GeoPoint) {
+            BitmapDescriptor? markerColor = _getMarkerColor(collectionId);
+            if (markerColor != null) {
+              Marker marker = Marker(
+                markerId: MarkerId(doc.id),
+                position: LatLng(locationData.latitude, locationData.longitude),
+                infoWindow: InfoWindow(
+                  title: "ป้าย $name",
+                  snippet: description ?? "ไม่มีข้อความเพิ่มเติม",
+                ),
+                icon: await _getMarkerIcon(iconUrl),
+              );
+              markers.add(marker);
+            } else {
+              print("Marker color not found for collectionId: $collectionId");
             }
           }
+          // If locationData is a list of GeoPoint objects
+          else if (locationData is List<dynamic>) {
+            for (var location in locationData) {
+              if (location is GeoPoint) {
+                BitmapDescriptor? markerColor = _getMarkerColor(collectionId);
+                if (markerColor != null) {
+                  Marker marker = Marker(
+                    markerId: MarkerId(doc.id + location.hashCode.toString()),
+                    position: LatLng(location.latitude, location.longitude),
+                    infoWindow: InfoWindow(
+                      title: "ป้าย $name",
+                      snippet: description ?? "",
+                    ),
+                    icon: await _getMarkerIcon(iconUrl),
+                  );
+                  markers.add(marker);
+                } else {
+                  print(
+                      "Marker color not found for collectionId: $collectionId");
+                }
+              } else {
+                print("Invalid location data element: ${location.runtimeType}");
+              }
+            }
+          } else {
+            print("Invalid location data format");
+          }
+        } else {
+          print("Invalid marker data: document ${doc.id}");
         }
       } catch (e) {
-        print("Error processing document ${doc.id}: $e");
+        print("Error processing marker data: $e");
       }
-    }
-
-    if (!SetEquality().equals(combinedMarkers, newMarkers)) {
-      setState(() {
-        combinedMarkers = newMarkers;
-      });
-    }
-  }
-
-  void _createMarkerFromGeoPoint(String docId, GeoPoint geoPoint, String name,
-      String? description, String iconUrl) async {
-    var markerBitmap = await getMarkerBitmapFromUrl(iconUrl);
-    setState(() {
-      markers.add(Marker(
-        markerId: MarkerId(docId),
-        position: LatLng(geoPoint.latitude, geoPoint.longitude),
-        infoWindow: InfoWindow(title: name, snippet: description),
-        icon: markerBitmap,
-      ));
     });
   }
 
-  Future<BitmapDescriptor> getMarkerBitmapFromUrl(String iconUrl) async {
-    final http.Response response = await http.get(Uri.parse(iconUrl));
-    final Uint8List markerImageBytes = response.bodyBytes;
-    return BitmapDescriptor.fromBytes(markerImageBytes);
+  BitmapDescriptor? _getMarkerColor(String collectionId) {
+    switch (collectionId) {
+      case 'markers/traffic-sign-blue/signs_blue':
+        return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue);
+      case 'markers/traffic-sign-construction-warning/signs_c-warning':
+        return BitmapDescriptor.defaultMarkerWithHue(
+            BitmapDescriptor.hueOrange);
+      case 'markers/traffic-sign-guide/signs_guide':
+        return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueCyan);
+      case 'markers/traffic-sign-red/signs_red':
+        return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed);
+      case 'markers/traffic-sign-warning/signs_warning':
+        return BitmapDescriptor.defaultMarkerWithHue(
+            BitmapDescriptor.hueYellow);
+      default:
+        return null;
+    }
   }
 }

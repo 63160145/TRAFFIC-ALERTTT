@@ -2,15 +2,13 @@ import 'dart:convert';
 import 'dart:math' as math;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
-import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:traffic_base/map_models/widgets/polyline/map_durations.dart';
 import 'package:traffic_base/styles/custom_fab.dart';
 import 'package:traffic_base/styles/text_style.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:traffic_base/services/database.dart';
 
 // ignore: unused_import
 import 'map_polyline_cancel.dart';
@@ -18,16 +16,11 @@ import 'map_polyline_cancel.dart';
 class MapPolyline extends StatefulWidget {
   final Position userLocation;
   final String destinationLocation;
-  final String time;
-  final String distance;
 
   const MapPolyline({
     Key? key,
     required this.userLocation,
     required this.destinationLocation,
-    required this.time,
-    required this.distance,
-    // required this.time,
   }) : super(key: key);
 
   @override
@@ -38,15 +31,14 @@ class _MapPolylineState extends State<MapPolyline> {
   static const LatLng _pGooglePlex = LatLng(13.2891, 100.9244);
 
   String mapTheme = '';
-  StreamSubscription<Position>? _positionStreamSubscription;
+
   late GoogleMapController mapController;
-  Set<Marker> combinedMarkers = {}; // เพิ่มตัวแปร combinedMarkers
-  Set<Marker> markers = {}; // เพิ่มตัวแปร markers
-  // ignore: unused_field
-  late LatLng _userLocation; //เก็บที่อยู่ปัจจุบัน
 
   // ignore: unused_field
-  Position? _currentLocation;
+  late LatLng _userLocation;
+
+  // ignore: unused_field
+  LatLng? _currentLocation;
 
   // ignore: unused_field
   late bool _isNavigationActive = false;
@@ -56,7 +48,7 @@ class _MapPolylineState extends State<MapPolyline> {
 
   late LatLng destinationLatLng;
 
-  List<LatLng> routePoints = []; //ตัวแปรระยะทางจากผู้ใช้กับปลายทาง
+  List<LatLng> routePoints = [];
 
   int _fabPressCount = 0;
 
@@ -67,10 +59,8 @@ class _MapPolylineState extends State<MapPolyline> {
     super.initState();
 
     loadMapTheme();
-    _buildMarkers();
-    _getCurrentLocation();
 
-    convertDestinationLocation(null).then((_) {
+    convertDestinationLocation().then((_) {
       _getDirections(
           LatLng(
             widget.userLocation.latitude,
@@ -78,6 +68,8 @@ class _MapPolylineState extends State<MapPolyline> {
           ),
           destinationLatLng);
     });
+
+    destinationLatLng = LatLng(0.0, 0.0);
   }
 
   Future<void> _getDirections(LatLng start, LatLng destination) async {
@@ -109,9 +101,8 @@ class _MapPolylineState extends State<MapPolyline> {
     }
   }
 
-  Future<void> convertDestinationLocation(Position? start) async {
+  Future<void> convertDestinationLocation() async {
     try {
-      start ??= widget.userLocation;
       // Convert the destinationLocation to a LatLng object
       destinationLatLng =
           await getLatLngFromAddress(widget.destinationLocation);
@@ -130,17 +121,17 @@ class _MapPolylineState extends State<MapPolyline> {
         headingAccuracy: 0,
       );
 
-      routePoints = await getRoutePoints(start, destinationPosition);
+      routePoints =
+          await getRoutePoints(widget.userLocation, destinationPosition);
 
       setState(() {
-        if (start != null) {
-          _markers.add(
-            Marker(
-              markerId: MarkerId('userPosition'),
-              position: LatLng(start.latitude, start.longitude),
-            ),
-          );
-        }
+        _markers.add(
+          Marker(
+            markerId: MarkerId('userPosition'),
+            position: LatLng(
+                widget.userLocation.latitude, widget.userLocation.longitude),
+          ),
+        );
         _markers.add(
           Marker(
             markerId: MarkerId('destinationPosition'),
@@ -269,177 +260,39 @@ class _MapPolylineState extends State<MapPolyline> {
     });
   }
 
-  void _buildMarkers() async {
-    List<String> collections = [
-      'markers/traffic-sign-blue/signs_blue',
-      'markers/traffic-sign-construction-warning/signs_c-warning',
-      'markers/traffic-sign-guide/signs_guide',
-      'markers/traffic-sign-red/signs_red',
-      'markers/traffic-sign-warning/signs_warning'
-    ];
-
-    for (String collectionId in collections) {
-      List<DocumentSnapshot> markerData =
-          await Database.getData(path: collectionId);
-      _processMarkerData(collectionId, markerData);
-    }
-
-    _mergeCurrentLocationWithMarkers();
-
-    setState(() {});
-  }
-
-  void _processMarkerData(
-      String collectionId, List<DocumentSnapshot> documents) {
-    documents.forEach((doc) {
-      try {
-        dynamic locationData = (doc.data() as Map<String, dynamic>)['location'];
-        String? name = (doc.data() as Map<String, dynamic>)['name'] as String?;
-        String? description =
-            (doc.data() as Map<String, dynamic>)['description'] as String?;
-
-        if (locationData != null && name != null) {
-          // If locationData is a single GeoPoint
-          if (locationData is GeoPoint) {
-            BitmapDescriptor? markerColor = _getMarkerColor(collectionId);
-            if (markerColor != null) {
-              Marker marker = Marker(
-                markerId: MarkerId(doc.id),
-                position: LatLng(locationData.latitude, locationData.longitude),
-                infoWindow: InfoWindow(
-                  title: "ป้าย $name",
-                  snippet: description ?? "ไม่มีข้อความเพิ่มเติม",
-                ),
-                icon: markerColor,
-              );
-              markers.add(marker);
-            } else {
-              print("Marker color not found for collectionId: $collectionId");
-            }
-          }
-          // If locationData is a list of GeoPoint objects
-          else if (locationData is List<dynamic>) {
-            for (var location in locationData) {
-              if (location is GeoPoint) {
-                BitmapDescriptor? markerColor = _getMarkerColor(collectionId);
-                if (markerColor != null) {
-                  Marker marker = Marker(
-                    markerId: MarkerId(doc.id + location.hashCode.toString()),
-                    position: LatLng(location.latitude, location.longitude),
-                    infoWindow: InfoWindow(
-                      title: "ป้าย $name",
-                      snippet: description ?? "",
-                    ),
-                    icon: markerColor,
-                  );
-                  markers.add(marker);
-                } else {
-                  print(
-                      "Marker color not found for collectionId: $collectionId");
-                }
-              } else {
-                print("Invalid location data element: ${location.runtimeType}");
-              }
-            }
-          } else {
-            print("Invalid location data format");
-          }
-        } else {
-          print("Invalid marker data: document ${doc.id}");
-        }
-      } catch (e) {
-        print("Error processing marker data: $e");
-      }
-    });
-  }
-
-  BitmapDescriptor? _getMarkerColor(String collectionId) {
-    switch (collectionId) {
-      case 'markers/traffic-sign-blue/signs_blue':
-        return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue);
-      case 'markers/traffic-sign-construction-warning/signs_c-warning':
-        return BitmapDescriptor.defaultMarkerWithHue(
-            BitmapDescriptor.hueOrange);
-      case 'markers/traffic-sign-guide/signs_guide':
-        return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueCyan);
-      case 'markers/traffic-sign-red/signs_red':
-        return BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed);
-      case 'markers/traffic-sign-warning/signs_warning':
-        return BitmapDescriptor.defaultMarkerWithHue(
-            BitmapDescriptor.hueYellow);
-      default:
-        return null;
-    }
-  }
-
-  FutureOr<LatLng?> _getUserLocation() async {
+  Future<LatLng> _getUserLocation() async {
     try {
       Position position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      );
+          desiredAccuracy: LocationAccuracy.high);
       LatLng userLocation = LatLng(position.latitude, position.longitude);
-      String? placeName =
-          await getPlaceName(position.latitude, position.longitude);
-      setState(() {
-        _userLocation = userLocation;
-      });
-      // mapController.animateCamera(CameraUpdate.newLatLng(userLocation));
-
-      if (placeName != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: Colors.white.withOpacity(0.9),
-            content: Text(
-              'Location: $placeName',
-              style: TextStyle(color: Colors.grey),
-            ),
-          ),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            backgroundColor: Colors.white.withOpacity(0.9),
-            content: const Text(
-              'Location: Unknown',
-              style: TextStyle(color: Colors.grey),
-            ),
-          ),
-        );
-      }
+      mapController.animateCamera(CameraUpdate.newLatLng(userLocation));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              'Location: ${userLocation.latitude}, ${userLocation.longitude}'),
+        ),
+      );
       return userLocation;
     } catch (error) {
-      print("Failed to get location: $error");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to get location: $error'),
+        ),
+      );
+      // คืนค่าพิกัดมาตรฐานหรือ null ถ้าคุณไม่ต้องการ throw exception
+      return LatLng(0.0, 0.0);
     }
-    return null;
-  }
-
-  Future<String?> getPlaceName(double latitude, double longitude) async {
-    final apiKey = dotenv.env['GOOGLE_API_KEY'] ?? 'YOUR_FALLBACK_API_KEY';
-    final url =
-        'https://maps.googleapis.com/maps/api/geocode/json?latlng=$latitude,$longitude&key=$apiKey&language=th';
-
-    final response = await http.get(Uri.parse(url));
-    if (response.statusCode == 200) {
-      final data = json.decode(response.body);
-      final results = data['results'];
-      if (results.isNotEmpty) {
-        return results[0]['formatted_address'];
-      }
-    }
-    return null;
   }
 
   Future<void> _getCurrentLocation() async {
     bool serviceEnabled;
     LocationPermission permission;
 
-    // ตรวจสอบว่าบริการตำแหน่งสามารถใช้งานได้หรือไม่
     serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
       return Future.error('Location services are disabled.');
     }
 
-    // ตรวจสอบสิทธิ์การเข้าถึงตำแหน่ง
     permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
@@ -448,52 +301,11 @@ class _MapPolylineState extends State<MapPolyline> {
       }
     }
 
-    // รับตำแหน่งปัจจุบัน
-    Position res = await Geolocator.getCurrentPosition(
+    Position position = await Geolocator.getCurrentPosition(
       desiredAccuracy: LocationAccuracy.high,
     );
     setState(() {
-      _currentLocation = res;
-    });
-
-    // อัปเดตตำแหน่งเครื่องหมายหรือดำเนินการอื่น ๆ
-    _mergeCurrentLocationWithMarkers();
-
-    // สมัครสมาชิกสำหรับอัปเดตตำแหน่ง
-    _positionStreamSubscription = Geolocator.getPositionStream().listen(
-      (Position position) {
-        _polylines.clear();
-        convertDestinationLocation(position);
-        setState(() {
-          _currentLocation = position;
-        });
-        // อัปเดตตำแหน่งเครื่องหมายหรือดำเนินการอื่น ๆ
-        _mergeCurrentLocationWithMarkers();
-      },
-      onError: (error) {
-        print('เกิดข้อผิดพลาดในการรับอัปเดตตำแหน่ง: $error');
-      },
-    );
-  }
-
-  void _mergeCurrentLocationWithMarkers() {
-    setState(() {
-      combinedMarkers
-          .clear(); // เพิ่มบรรทัดนี้เพื่อล้างค่า combinedMarkers ก่อนที่จะรวมตัวแปรอื่น ๆ
-      if (_currentLocation != null) {
-        combinedMarkers.add(
-          Marker(
-            markerId: const MarkerId("_currentLocation"),
-            icon:
-                BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueCyan),
-            position: LatLng(
-              _currentLocation!.latitude,
-              _currentLocation!.longitude,
-            ),
-          ),
-        );
-      }
-      combinedMarkers.addAll(markers);
+      _currentLocation = LatLng(position.latitude, position.longitude);
     });
   }
 
@@ -502,14 +314,16 @@ class _MapPolylineState extends State<MapPolyline> {
     return Stack(
       children: [
         GoogleMap(
-            initialCameraPosition: const CameraPosition(
+            initialCameraPosition: CameraPosition(
               target: _pGooglePlex,
               zoom: 15,
             ),
+            onMapCreated: onMapCreated,
             zoomControlsEnabled: false,
             compassEnabled: false,
-            markers: combinedMarkers,
-            polylines: Set.from(_polylines)),
+            markers: Set.from(_markers),
+            polylines: Set.from(_polylines),
+            mapType: MapType.normal),
         Positioned(
           top: 170,
           right: 20,
@@ -641,6 +455,7 @@ class _MapPolylineState extends State<MapPolyline> {
             children: [
               Container(
                 height: 40,
+                width: 135,
                 decoration: BoxDecoration(
                   color: Colors.white /*.withOpacity(0.9)*/,
                   borderRadius: BorderRadius.circular(10),
@@ -654,9 +469,9 @@ class _MapPolylineState extends State<MapPolyline> {
                   ],
                 ),
                 child: Padding(
-                  padding: EdgeInsets.only(left: 15, right: 15, top: 10),
+                  padding: EdgeInsets.only(left: 15, top: 10),
                   child: Text(
-                    widget.time + " | " + widget.distance,
+                    '10 นาที | 5 กม.',
                     style: AppTextStyle.sarabunPolylineTime(context),
                   ),
                 ),
@@ -736,8 +551,8 @@ class _MapPolylineState extends State<MapPolyline> {
   }
 
   void onFabPressed() async {
-    LatLng? userLocation = await _getUserLocation();
-    if (userLocation == null) return;
+    LatLng userLocation = await _getUserLocation();
+
     switch (_fabPressCount) {
       case 0:
         // ย้ายกล้องไปยังตำแหน่งผู้ใช้
@@ -839,11 +654,5 @@ class _MapPolylineState extends State<MapPolyline> {
         break;
     }
     return Icon(iconData);
-  }
-
-  @override
-  void dispose() {
-    _positionStreamSubscription?.cancel();
-    super.dispose();
   }
 }
