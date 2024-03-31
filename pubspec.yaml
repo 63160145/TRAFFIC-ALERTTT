@@ -29,7 +29,6 @@ dependencies:
   html_unescape: ^2.0.0
   flutter_svg: ^2.0.10+1
   firebase_storage: ^11.6.11
- 
 
 dev_dependencies:
   flutter_test:

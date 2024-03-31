@@ -2,25 +2,42 @@ import 'dart:convert';
 import 'dart:math' as math;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
-
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:traffic_base/map_models/widgets/polyline/map_durations.dart';
 import 'package:traffic_base/styles/custom_fab.dart';
 import 'package:traffic_base/styles/text_style.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:traffic_base/services/database.dart';
+import 'dart:typed_data';
+import '../../zoom_controller.dart';
+// ignore: implementation_imports
+import 'package:flutter/cupertino.dart';
 
 // ignore: unused_import
 import 'map_polyline_cancel.dart';
 
+class MarkerDistance {
+  final Marker marker;
+  final double distance;
+
+  MarkerDistance({required this.marker, required this.distance});
+}
+
 class MapPolyline extends StatefulWidget {
   final Position userLocation;
   final String destinationLocation;
+  final String time;
+  final String distance;
 
   const MapPolyline({
     Key? key,
     required this.userLocation,
     required this.destinationLocation,
+    required this.time,
+    required this.distance,
   }) : super(key: key);
 
   @override
@@ -31,25 +48,28 @@ class _MapPolylineState extends State<MapPolyline> {
   static const LatLng _pGooglePlex = LatLng(13.2891, 100.9244);
 
   String mapTheme = '';
-
   late GoogleMapController mapController;
+  Set<Marker> combinedMarkers = {}; // เพิ่มตัวแปร combinedMarkers
+  Set<Marker> routeMarkers = {};
+  Set<Marker> markers = {}; // เพิ่มตัวแปร markers
+  late MapZoomController zoomController;
+  // ignore: unused_field
+  late LatLng _userLocation; //เก็บที่อยู่ปัจจุบัน
+  List<MarkerDistance> markerDistances = [];
 
   // ignore: unused_field
-  late LatLng _userLocation;
-
-  // ignore: unused_field
-  LatLng? _currentLocation;
+  Position? _currentLocation;
 
   // ignore: unused_field
   late bool _isNavigationActive = false;
 
   final Set<Marker> _markers = {};
   final Set<Polyline> _polylines = <Polyline>{};
-
+  Marker? currentMarker;
   late LatLng destinationLatLng;
-
-  List<LatLng> routePoints = [];
-
+  StreamSubscription<Position>? _positionStreamSubscription;
+  List<LatLng> routePoints = []; //ตัวแปรระยะทางจากผู้ใช้กับปลายทาง
+  List<Marker> sortMarkers = [];
   int _fabPressCount = 0;
 
   List<Direction> _directions = [];
@@ -59,8 +79,9 @@ class _MapPolylineState extends State<MapPolyline> {
     super.initState();
 
     loadMapTheme();
-
-    convertDestinationLocation().then((_) {
+    _buildMarkers();
+    _getCurrentLocation();
+    convertDestinationLocation(null).then((_) {
       _getDirections(
           LatLng(
             widget.userLocation.latitude,
@@ -68,8 +89,12 @@ class _MapPolylineState extends State<MapPolyline> {
           ),
           destinationLatLng);
     });
+  }
 
-    destinationLatLng = LatLng(0.0, 0.0);
+  Future<void> _onMapCreated(GoogleMapController controller) async {
+    mapController = controller;
+    mapController.setMapStyle(mapTheme);
+    zoomController = MapZoomController(mapController: controller);
   }
 
   Future<void> _getDirections(LatLng start, LatLng destination) async {
@@ -101,8 +126,9 @@ class _MapPolylineState extends State<MapPolyline> {
     }
   }
 
-  Future<void> convertDestinationLocation() async {
+  Future<void> convertDestinationLocation(Position? start) async {
     try {
+      start ??= widget.userLocation;
       // Convert the destinationLocation to a LatLng object
       destinationLatLng =
           await getLatLngFromAddress(widget.destinationLocation);
@@ -121,21 +147,52 @@ class _MapPolylineState extends State<MapPolyline> {
         headingAccuracy: 0,
       );
 
-      routePoints =
-          await getRoutePoints(widget.userLocation, destinationPosition);
+      routePoints = await getRoutePoints(start, destinationPosition);
+
+      markerDistances.clear();
+      combinedMarkers.clear();
+      List<LatLng> polylineCoordinates = [];
+      if (routePoints.isNotEmpty) {
+        for (LatLng lc in routePoints) {
+          polylineCoordinates.add(LatLng(lc.latitude, lc.longitude));
+        }
+
+        List<Marker> tmpMarker = [];
+        tmpMarker.addAll(markers);
+        markers.clear();
+        for (Marker marker in tmpMarker) {
+          for (LatLng point in polylineCoordinates) {
+            double distance = calculateDistance(marker.position, point);
+            if (distance <= 10) {
+              markers.add(marker);
+              double userDistance = calculateDistance(
+                  LatLng(start.latitude, start.longitude), marker.position);
+              markerDistances
+                  .add(MarkerDistance(marker: marker, distance: userDistance));
+              // break;
+            }
+          }
+        }
+      }
+
+      markerDistances.sort((a, b) => a.distance.compareTo(b.distance));
 
       setState(() {
-        _markers.add(
-          Marker(
-            markerId: MarkerId('userPosition'),
-            position: LatLng(
-                widget.userLocation.latitude, widget.userLocation.longitude),
-          ),
-        );
+        markers;
+        markerDistances;
+        if (start != null) {
+          _markers.add(
+            Marker(
+              markerId: MarkerId('userPosition'),
+              position: LatLng(start.latitude, start.longitude),
+            ),
+          );
+        }
         _markers.add(
           Marker(
             markerId: MarkerId('destinationPosition'),
-            position: destinationLatLng,
+            position: LatLng(
+                destinationPosition.latitude, destinationPosition.longitude),
           ),
         );
         _polylines.add(
@@ -152,6 +209,7 @@ class _MapPolylineState extends State<MapPolyline> {
           ),
         );
       });
+      _mergeCurrentLocationWithMarkers();
     } catch (e) {
 // Handle the error, e.g., by showing an alert to the user
       print('An error occurred while converting destination location: $e');
@@ -212,6 +270,7 @@ class _MapPolylineState extends State<MapPolyline> {
             polylinePoints.addAll(decodePolyline(stepPolyline));
           }
         }
+
         return polylinePoints;
       } else {
         throw Exception('No routes found for the given locations.');
@@ -260,39 +319,141 @@ class _MapPolylineState extends State<MapPolyline> {
     });
   }
 
-  Future<LatLng> _getUserLocation() async {
+  void _buildMarkers() async {
+    print("build markers");
+    List<String> collections = [
+      'markers/traffic-sign-blue/signs_blue',
+      'markers/traffic-sign-construction-warning/signs_c-warning',
+      'markers/traffic-sign-guide/signs_guide',
+      'markers/traffic-sign-red/signs_red',
+      'markers/traffic-sign-warning/signs_warning'
+    ];
+    combinedMarkers.clear();
+
+    for (String collectionId in collections) {
+      List<DocumentSnapshot> markerData =
+          await Database.getData(path: collectionId);
+      _processMarkerData(collectionId, markerData);
+    }
+
+    //_mergeCurrentLocationWithMarkers();
+
+    setState(() {});
+  }
+
+  void _processMarkerData(
+      String collectionId, List<DocumentSnapshot> documents) async {
+    var markerIconCache = <String, BitmapDescriptor>{};
+    // var newMarkers = Set<Marker>();
+
+    for (var doc in documents) {
+      try {
+        var data = doc.data() as Map<String, dynamic>;
+        var name = data['name'] as String?;
+        var description = data['description'] as String?;
+        var iconUrl = data['iconUrl'] as String?;
+        List<dynamic> locations = data['location']; // location is an array
+
+        if (name != null && iconUrl != null) {
+          BitmapDescriptor markerIcon;
+
+          if (markerIconCache.containsKey(iconUrl)) {
+            markerIcon = markerIconCache[iconUrl]!;
+          } else {
+            markerIcon = await getMarkerBitmapFromUrl(iconUrl);
+            markerIconCache[iconUrl] = markerIcon;
+          }
+
+          // Create a marker for each GeoPoint in the array
+          for (var geoPoint in locations) {
+            markers.add(Marker(
+              markerId: MarkerId(doc.id + geoPoint.hashCode.toString()),
+              position: LatLng(geoPoint.latitude, geoPoint.longitude),
+              infoWindow: InfoWindow(title: name, snippet: description),
+              icon: markerIcon,
+            ));
+          }
+        }
+      } catch (e) {
+        print("Error processing document ${doc.id}: $e");
+      }
+    }
+  }
+
+  Future<BitmapDescriptor> getMarkerBitmapFromUrl(String iconUrl) async {
+    final http.Response response = await http.get(Uri.parse(iconUrl));
+    final Uint8List markerImageBytes = response.bodyBytes;
+    return BitmapDescriptor.fromBytes(markerImageBytes);
+  }
+
+  FutureOr<LatLng?> _getUserLocation() async {
     try {
       Position position = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.high);
-      LatLng userLocation = LatLng(position.latitude, position.longitude);
-      mapController.animateCamera(CameraUpdate.newLatLng(userLocation));
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-              'Location: ${userLocation.latitude}, ${userLocation.longitude}'),
-        ),
+        desiredAccuracy: LocationAccuracy.high,
       );
+      LatLng userLocation = LatLng(position.latitude, position.longitude);
+      String? placeName =
+          await getPlaceName(position.latitude, position.longitude);
+      setState(() {
+        _userLocation = userLocation;
+      });
+      // mapController.animateCamera(CameraUpdate.newLatLng(userLocation));
+
+      if (placeName != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: Colors.white.withOpacity(0.9),
+            content: Text(
+              'Location: $placeName',
+              style: TextStyle(color: Colors.grey),
+            ),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: Colors.white.withOpacity(0.9),
+            content: const Text(
+              'Location: Unknown',
+              style: TextStyle(color: Colors.grey),
+            ),
+          ),
+        );
+      }
       return userLocation;
     } catch (error) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to get location: $error'),
-        ),
-      );
-      // คืนค่าพิกัดมาตรฐานหรือ null ถ้าคุณไม่ต้องการ throw exception
-      return LatLng(0.0, 0.0);
+      print("Failed to get location: $error");
     }
+    return null;
+  }
+
+  Future<String?> getPlaceName(double latitude, double longitude) async {
+    final apiKey = dotenv.env['GOOGLE_API_KEY'] ?? 'YOUR_FALLBACK_API_KEY';
+    final url =
+        'https://maps.googleapis.com/maps/api/geocode/json?latlng=$latitude,$longitude&key=$apiKey&language=th';
+
+    final response = await http.get(Uri.parse(url));
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      final results = data['results'];
+      if (results.isNotEmpty) {
+        return results[0]['formatted_address'];
+      }
+    }
+    return null;
   }
 
   Future<void> _getCurrentLocation() async {
     bool serviceEnabled;
     LocationPermission permission;
 
+    // ตรวจสอบว่าบริการตำแหน่งสามารถใช้งานได้หรือไม่
     serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
       return Future.error('Location services are disabled.');
     }
 
+    // ตรวจสอบสิทธิ์การเข้าถึงตำแหน่ง
     permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
@@ -301,11 +462,73 @@ class _MapPolylineState extends State<MapPolyline> {
       }
     }
 
-    Position position = await Geolocator.getCurrentPosition(
-      desiredAccuracy: LocationAccuracy.high,
+    _positionStreamSubscription = Geolocator.getPositionStream().listen(
+      (Position position) {
+        _polylines.clear();
+        convertDestinationLocation(position);
+        setState(() {
+          _currentLocation = position;
+        });
+        _mergeCurrentLocationWithMarkers();
+        LatLng location =
+            LatLng(_currentLocation!.latitude, _currentLocation!.longitude);
+        for (MarkerDistance markerDistance in markerDistances) {
+          double distance =
+              calculateDistance(markerDistance.marker.position, location);
+          bool inFront = true;
+          double bearingLocation =
+              bearingBetweenLatLngs(location, routePoints.first);
+          double bearingMarker =
+              bearingBetweenLatLngs(location, markerDistance.marker.position);
+          if ((bearingMarker - bearingLocation).abs() <= 90) {
+            inFront = true;
+            break;
+          }
+          if (distance <= 100 && inFront) {
+            setState(() {
+              currentMarker = markerDistance.marker;
+            });
+            break;
+          }
+        }
+        mapController.animateCamera(CameraUpdate.newLatLng(location));
+      },
     );
+  }
+
+  double bearingBetweenLatLngs(LatLng first, LatLng second) {
+    double lat1 = first.latitude * math.pi / 180.0;
+    double lon1 = first.longitude * math.pi / 180.0;
+    double lat2 = second.latitude * math.pi / 180.0;
+    double lon2 = second.longitude * math.pi / 180.0;
+
+    double lonDiff = lon2 - lon1;
+    double y = math.sin(lonDiff) * math.cos(lat2);
+    double x = math.cos(lat1) * math.sin(lat2) -
+        math.sin(lat1) * math.cos(lat2) * math.cos(lonDiff);
+    double bearing = math.atan2(y, x);
+    bearing = bearing * (180.0 / math.pi);
+    bearing = (bearing + 360) % 360;
+
+    return bearing;
+  }
+
+  void _mergeCurrentLocationWithMarkers() {
     setState(() {
-      _currentLocation = LatLng(position.latitude, position.longitude);
+      if (_currentLocation != null) {
+        combinedMarkers.add(
+          Marker(
+            markerId: const MarkerId("_currentLocation"),
+            icon:
+                BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueCyan),
+            position: LatLng(
+              _currentLocation!.latitude,
+              _currentLocation!.longitude,
+            ),
+          ),
+        );
+      }
+      combinedMarkers.addAll(markers);
     });
   }
 
@@ -314,16 +537,15 @@ class _MapPolylineState extends State<MapPolyline> {
     return Stack(
       children: [
         GoogleMap(
-            initialCameraPosition: CameraPosition(
+            initialCameraPosition: const CameraPosition(
               target: _pGooglePlex,
               zoom: 15,
             ),
-            onMapCreated: onMapCreated,
+            onMapCreated: _onMapCreated,
             zoomControlsEnabled: false,
             compassEnabled: false,
-            markers: Set.from(_markers),
-            polylines: Set.from(_polylines),
-            mapType: MapType.normal),
+            markers: combinedMarkers,
+            polylines: Set.from(_polylines)),
         Positioned(
           top: 170,
           right: 20,
@@ -434,7 +656,7 @@ class _MapPolylineState extends State<MapPolyline> {
                       ),
                       SizedBox(width: 30),
                       Text(
-                        'ป้ายจราจร...',
+                        currentMarker?.infoWindow.title ?? "",
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: AppTextStyle.sarabunPolyline(
@@ -455,7 +677,6 @@ class _MapPolylineState extends State<MapPolyline> {
             children: [
               Container(
                 height: 40,
-                width: 135,
                 decoration: BoxDecoration(
                   color: Colors.white /*.withOpacity(0.9)*/,
                   borderRadius: BorderRadius.circular(10),
@@ -469,12 +690,44 @@ class _MapPolylineState extends State<MapPolyline> {
                   ],
                 ),
                 child: Padding(
-                  padding: EdgeInsets.only(left: 15, top: 10),
+                  padding: EdgeInsets.only(left: 15, right: 15, top: 10),
                   child: Text(
-                    '10 นาที | 5 กม.',
+                    widget.time + " | " + widget.distance,
                     style: AppTextStyle.sarabunPolylineTime(context),
                   ),
                 ),
+              ),
+            ],
+          ),
+        ),
+        Positioned(
+          top: MediaQuery.of(context).size.height - 210,
+          right: MediaQuery.of(context).size.width * 0.05,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              CustomFAB(
+                heroTag: 'zoomin',
+                onPressed: () {
+                  zoomController.zoomIn();
+                },
+                iconData: CupertinoIcons.add, //zoom
+              ),
+            ],
+          ),
+        ),
+        Positioned(
+          top: MediaQuery.of(context).size.height - 145,
+          right: MediaQuery.of(context).size.width * 0.05,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              CustomFAB(
+                heroTag: 'zoomout',
+                onPressed: () {
+                  zoomController.zoomOut();
+                },
+                iconData: Icons.remove,
               ),
             ],
           ),
@@ -523,10 +776,6 @@ class _MapPolylineState extends State<MapPolyline> {
 
   void onMapCreated(GoogleMapController controller) {
     mapController = controller;
-    /* if (mapTheme.isNotEmpty) {
-      controller.setMapStyle(mapTheme);
-    }*/
-
     setState(() {
       _markers.add(
         Marker(
@@ -551,8 +800,8 @@ class _MapPolylineState extends State<MapPolyline> {
   }
 
   void onFabPressed() async {
-    LatLng userLocation = await _getUserLocation();
-
+    LatLng? userLocation = await _getUserLocation();
+    if (userLocation == null) return;
     switch (_fabPressCount) {
       case 0:
         // ย้ายกล้องไปยังตำแหน่งผู้ใช้
@@ -654,5 +903,37 @@ class _MapPolylineState extends State<MapPolyline> {
         break;
     }
     return Icon(iconData);
+  }
+
+  @override
+  void dispose() {
+    _positionStreamSubscription?.cancel();
+    super.dispose();
+  }
+
+  // Convert distance to radians
+  double _toRadians(double degree) {
+    return degree * (math.pi / 180);
+  }
+
+  /// Calculate distance
+  double calculateDistance(LatLng point1, LatLng point2) {
+    const double radius = 6371; // Earth's radius in kilometers
+    double lat1 = point1.latitude;
+    double lon1 = point1.longitude;
+    double lat2 = point2.latitude;
+    double lon2 = point2.longitude;
+
+    double dLat = _toRadians(lat2 - lat1);
+    double dLon = _toRadians(lon2 - lon1);
+
+    double a = (math.sin(dLat / 2) * math.sin(dLat / 2)) +
+        (math.cos(_toRadians(lat1)) *
+            math.cos(_toRadians(lat2)) *
+            math.sin(dLon / 2) *
+            math.sin(dLon / 2));
+    double c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
+    double distance = radius * c;
+    return distance * 1000; // Convert to meters
   }
 }

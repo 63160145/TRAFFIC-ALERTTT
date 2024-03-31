@@ -61,7 +61,7 @@ class _MapScreenState extends State<MapScreen> {
 
     _initializeMap();
     _getCurrentLocation();
-    _getUserLocation();
+    //_getUserLocation();
     _startLocationUpdates();
 
     textSwitchTimer = Timer.periodic(Duration(seconds: 10), (Timer t) {
@@ -105,11 +105,20 @@ class _MapScreenState extends State<MapScreen> {
 
   Future<void> _startLocationUpdates() async {
     await _getCurrentLocation();
-    Geolocator.getPositionStream().listen((Position position) {
-      setState(() {
-        currentLocation = position;
-      });
-    });
+    Geolocator.getPositionStream().listen(
+      (Position position) {
+        setState(() {
+          currentLocation = position;
+        });
+        // อัปเดตตำแหน่งเครื่องหมายหรือดำเนินการอื่น ๆ
+        _mergeCurrentLocationWithMarkers();
+        if (currentLocation != null) {
+          LatLng Location =
+              LatLng(currentLocation!.latitude, currentLocation!.longitude);
+          mapController.animateCamera(CameraUpdate.newLatLng(Location));
+        }
+      },
+    );
   }
 
   Future<void> _getCurrentLocation() async {
@@ -154,8 +163,8 @@ class _MapScreenState extends State<MapScreen> {
       setState(() {
         _userLocation = userLocation;
         // Replace or add the user marker to its own dedicated Set
-        userMarkers.clear(); // Clear previous marker
-        userMarkers.add(userLocationMarker); // Add the new marker
+        //userMarkers.clear(); // Clear previous marker
+        //userMarkers.add(userLocationMarker); // Add the new marker
       });
 
       mapController.animateCamera(CameraUpdate.newLatLng(userLocation));
@@ -602,7 +611,7 @@ class _MapScreenState extends State<MapScreen> {
           ),
         ),
         Positioned(
-          top: MediaQuery.of(context).size.height * 0.90,
+          top: MediaQuery.of(context).size.height * 0.83,
           right: MediaQuery.of(context).size.width * 0.05,
           child: Column(
             mainAxisAlignment: MainAxisAlignment.end,
@@ -618,7 +627,7 @@ class _MapScreenState extends State<MapScreen> {
           ),
         ),
         Positioned(
-          top: MediaQuery.of(context).size.height * 0.83,
+          top: MediaQuery.of(context).size.height * 0.90,
           right: MediaQuery.of(context).size.width * 0.05,
           child: Column(
             mainAxisAlignment: MainAxisAlignment.end,
@@ -687,7 +696,7 @@ class _MapScreenState extends State<MapScreen> {
       _processMarkerData(collectionId, markerData);
     }
 
-    _mergeCurrentLocationWithMarkers();
+    //_mergeCurrentLocationWithMarkers();
 
     setState(() {});
   }
