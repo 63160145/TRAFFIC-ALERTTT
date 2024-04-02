@@ -13,6 +13,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:traffic_base/services/database.dart';
 import 'dart:typed_data';
 import '../../zoom_controller.dart';
+import 'dart:typed_data';
 // ignore: implementation_imports
 import 'package:flutter/cupertino.dart';
 
@@ -24,6 +25,16 @@ class MarkerDistance {
   final double distance;
 
   MarkerDistance({required this.marker, required this.distance});
+}
+
+class MarkerData {
+  final String id;
+  final String url;
+
+  const MarkerData({
+    required this.id,
+    required this.url,
+  });
 }
 
 class MapPolyline extends StatefulWidget {
@@ -71,6 +82,7 @@ class _MapPolylineState extends State<MapPolyline> {
   List<LatLng> routePoints = []; //ตัวแปรระยะทางจากผู้ใช้กับปลายทาง
   List<Marker> sortMarkers = [];
   int _fabPressCount = 0;
+  List<MarkerData> _markerData = [];
 
   List<Direction> _directions = [];
 
@@ -366,6 +378,8 @@ class _MapPolylineState extends State<MapPolyline> {
 
           // Create a marker for each GeoPoint in the array
           for (var geoPoint in locations) {
+            _markerData.add(MarkerData(
+                id: doc.id + geoPoint.hashCode.toString(), url: iconUrl));
             markers.add(Marker(
               markerId: MarkerId(doc.id + geoPoint.hashCode.toString()),
               position: LatLng(geoPoint.latitude, geoPoint.longitude),
@@ -425,6 +439,18 @@ class _MapPolylineState extends State<MapPolyline> {
       print("Failed to get location: $error");
     }
     return null;
+  }
+
+  MarkerData? getMarkerDataById(String id) {
+    if (_markerData.isNotEmpty) {
+      try {
+        return _markerData.firstWhere((item) => item.id == id);
+      } catch (e) {
+        return null;
+      }
+    } else {
+      return null;
+    }
   }
 
   Future<String?> getPlaceName(double latitude, double longitude) async {
@@ -557,14 +583,6 @@ class _MapPolylineState extends State<MapPolyline> {
                 onPressed: () {},
                 iconData: Icons.volume_up,
               ),
-              SizedBox(
-                height: 5,
-              ),
-              CustomFAB(
-                heroTag: 'navigation',
-                onPressed: onFabPressed,
-                iconData: Icons.navigation,
-              ),
             ],
           ),
         ),
@@ -648,21 +666,38 @@ class _MapPolylineState extends State<MapPolyline> {
                 child: Padding(
                   padding: EdgeInsets.symmetric(horizontal: 15),
                   child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Icon(
-                        Icons.directions_sharp,
-                        size: 60,
-                        color: Colors.blue.shade600,
-                      ),
-                      SizedBox(width: 30),
-                      Text(
-                        currentMarker?.infoWindow.title ?? "",
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTextStyle.sarabunPolyline(
-                          context,
+                      // Icon(
+                      //   Icons.directions_sharp,
+                      //   size: 60,
+                      //   color: Colors.blue.shade600,
+                      // ),
+                      getMarkerDataById(currentMarker?.markerId.value ?? "") ==
+                              null
+                          ? Icon(
+                              Icons.directions_sharp,
+                              size: 60,
+                              color: Colors.blue.shade600,
+                            )
+                          : Image(
+                              image: NetworkImage(getMarkerDataById(
+                                          currentMarker?.markerId.value ?? "")
+                                      ?.url ??
+                                  ""),
+                            ),
+                      Center(
+                        child: Text(
+                          currentMarker?.infoWindow.title ?? "",
+                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTextStyle.sarabunPolyline(
+                            context,
+                          ),
                         ),
-                      )
+                      ),
+                      SizedBox(width: 60),
                     ],
                   ),
                 ),
@@ -837,7 +872,7 @@ class _MapPolylineState extends State<MapPolyline> {
       context: context,
       builder: (BuildContext context) {
         return Container(
-          height: MediaQuery.of(context).size.height * 0.5,
+          height: MediaQuery.of(context).size.height * 3,
           child: ListView.builder(
             itemCount: _directions.length,
             itemBuilder: (context, index) {
